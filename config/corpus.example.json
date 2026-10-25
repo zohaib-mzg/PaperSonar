@@ -1,0 +1,40 @@
+{
+  "status": "draft_requires_source_profiling",
+  "corpus_version": "software-engineering-draft-v1",
+  "candidate_topic_ids": [
+    "T10743",
+    "T12423",
+    "T12479"
+  ],
+  "membership_rule": "any_supplied_topic_matches_an_admitted_topic",
+  "historical_baseline": {
+    "from_publication_year": 2016,
+    "to_publication_year": 2025
+  },
+  "partial_year": {
+    "publication_year": 2026,
+    "to_publication_date": "2026-10-25",
+    "label": "partial"
+  },
+  "candidate_work_types": [
+    "article",
+    "review",
+    "preprint"
+  ],
+  "require_source_type_validation": true,
+  "target_admitted_work_count": {
+    "minimum": 30000,
+    "maximum": 60000,
+    "is_hard_truncation_limit": false
+  },
+  "reference_targets": "retain_out_of_scope_targets_as_stubs",
+  "refresh_strategy": "bounded_complete_refetch",
+  "supported_page_size": 100,
+  "resource_review_threshold_bytes": {
+    "database": 2000000000,
+    "compressed_raw": 1000000000
+  },
+  "paid_api_usage_allowed": false,
+  "requires_free_api_key_for_full_cursor_traversal": true,
+  "notes": "Illustrative configuration contract. No configuration loader or ETL pipeline is implemented."
+}

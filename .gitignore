@@ -1,0 +1,50 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# JavaScript
+node_modules/
+dist/
+.next/
+
+# Full datasets, intermediates, and database backups
+/data/raw/
+/data/staging/
+/data/processed/
+/data/warehouse/
+/backups/
+*.dump
+
+# Runtime outputs and local scratch work
+/logs/
+/outputs/
+/tmp/
+/private/
+*.log
+
+# Power BI local workspace state
+**/.pbi/localSettings.json
+**/.pbi/cache.abf
+**/.pbi/unappliedChanges.json
+
+# Editor and operating system files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Office temporary lock files
+~$*

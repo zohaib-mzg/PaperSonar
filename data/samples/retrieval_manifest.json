@@ -1,0 +1,23 @@
+[
+  {
+    "file": "openalex_works_pilot.json",
+    "url": "https://api.openalex.org/works?search=software+testing&filter=publication_year%3A2024&per_page=20",
+    "retrieved_at_utc": "2026-10-25T17:27:09.093447+00:00",
+    "sha256": "4c0ae5a866fa208da452463c5d573cb6942f87ce1d6b77b1498b7db270920a33",
+    "status": "retrieved"
+  },
+  {
+    "file": "openalex_topics_pilot.json",
+    "url": "https://api.openalex.org/topics?search=software+testing&per_page=10",
+    "retrieved_at_utc": "2026-10-25T17:27:17.531544+00:00",
+    "sha256": "120fbe3c8b86f4e5a15fda129ae448c83aa04b906055a2502ecebc263dcb8249",
+    "status": "retrieved"
+  },
+  {
+    "file": "crossref_doi_pilot.json",
+    "url": "https://api.crossref.org/works/10.1109%2Ftse.2024.3368208?",
+    "retrieved_at_utc": "2026-10-25T17:27:26.035485+00:00",
+    "sha256": "d028575f95f1e1232c0ffabf0c43e2919be4732d8d274a05c936e4e163e934ba",
+    "status": "retrieved"
+  }
+]

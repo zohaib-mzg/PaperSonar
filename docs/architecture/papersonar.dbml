@@ -1,0 +1,148 @@
+Table etl_run {
+  run_id "bigserial" [pk, not null]
+  started_at "timestamptz" [not null]
+  completed_at "timestamptz"
+  status "text" [not null]
+  corpus_version "text" [not null]
+  mapping_version "text" [not null]
+  metrics_version "text" [not null]
+  manifest_path "text" [not null]
+  config_sha256 "char(64)" [not null]
+  records_received "integer" [not null]
+  records_rejected "integer" [not null]
+}
+
+Table dim_date {
+  date_key "integer" [pk, not null]
+  full_date "date" [unique]
+  day_of_month "smallint"
+  month_number "smallint"
+  quarter_number "smallint"
+  year_number "smallint"
+}
+
+Table dim_topic {
+  topic_key "bigserial" [pk, not null]
+  openalex_topic_id "text" [not null, unique]
+  topic_name "text" [not null]
+  subfield_id "text"
+  subfield_name "text"
+  field_id "text"
+  field_name "text"
+  domain_id "text"
+  domain_name "text"
+}
+
+Table dim_venue {
+  venue_key "bigserial" [pk, not null]
+  openalex_source_id "text" [not null, unique]
+  venue_name "text" [not null]
+  issn_l "text"
+  venue_type "text"
+}
+
+Table dim_work_type {
+  work_type_key "bigserial" [pk, not null]
+  type_code "text" [not null, unique]
+  type_label "text" [not null]
+}
+
+Table dim_access_status {
+  access_key "bigserial" [pk, not null]
+  status_code "text" [not null, unique]
+  is_oa "boolean"
+}
+
+Table dim_author {
+  author_key "bigserial" [pk, not null]
+  openalex_author_id "text" [not null, unique]
+  author_name "text" [not null]
+  orcid "text"
+}
+
+Table dim_institution {
+  institution_key "bigserial" [pk, not null]
+  openalex_institution_id "text" [not null, unique]
+  ror_id "text"
+  institution_name "text" [not null]
+  country_code "char(2)"
+  institution_type "text"
+}
+
+Table dim_work {
+  work_key "bigserial" [pk, not null]
+  openalex_work_id "text" [not null, unique]
+  doi "text" [unique]
+  title "text"
+  publication_year "smallint"
+  date_precision "text" [not null]
+  language_code "text"
+  is_in_scope "boolean" [not null]
+  is_stub "boolean" [not null]
+  source_updated_at "timestamptz"
+  loaded_run_id "bigint" [not null, ref: > etl_run.run_id]
+}
+
+Table fact_publication {
+  work_key "bigint" [pk, not null, ref: > dim_work.work_key]
+  publication_date_key "integer" [not null, ref: > dim_date.date_key]
+  primary_topic_key "bigint" [not null, ref: > dim_topic.topic_key]
+  venue_key "bigint" [not null, ref: > dim_venue.venue_key]
+  work_type_key "bigint" [not null, ref: > dim_work_type.work_type_key]
+  publication_count "smallint" [not null]
+  author_count "integer"
+  reference_count "integer"
+  loaded_run_id "bigint" [not null, ref: > etl_run.run_id]
+}
+
+Table fact_work_snapshot {
+  work_key "bigint" [not null, ref: > dim_work.work_key]
+  snapshot_date_key "integer" [not null, ref: > dim_date.date_key]
+  access_key "bigint" [not null, ref: > dim_access_status.access_key]
+  cited_by_count "integer"
+  observed_count "smallint" [not null]
+  loaded_run_id "bigint" [not null, ref: > etl_run.run_id]
+  indexes {
+    (work_key, snapshot_date_key) [pk]
+  }
+}
+
+Table fact_citation {
+  citing_work_key "bigint" [not null, ref: > dim_work.work_key]
+  cited_work_key "bigint" [not null, ref: > dim_work.work_key]
+  first_seen_date_key "integer" [not null, ref: > dim_date.date_key]
+  last_seen_run_id "bigint" [not null, ref: > etl_run.run_id]
+  is_current "boolean" [not null]
+  indexes {
+    (citing_work_key, cited_work_key) [pk]
+  }
+}
+
+Table bridge_work_topic {
+  work_key "bigint" [not null, ref: > dim_work.work_key]
+  topic_key "bigint" [not null, ref: > dim_topic.topic_key]
+  assignment_score "numeric(8,6)"
+  is_primary "boolean" [not null]
+  allocation_weight "numeric(12,10)" [not null]
+  indexes {
+    (work_key, topic_key) [pk]
+  }
+}
+
+Table bridge_work_author {
+  work_key "bigint" [not null, ref: > dim_work.work_key]
+  author_key "bigint" [not null, ref: > dim_author.author_key]
+  author_position "text"
+  indexes {
+    (work_key, author_key) [pk]
+  }
+}
+
+Table bridge_work_institution {
+  work_key "bigint" [not null, ref: > dim_work.work_key]
+  institution_key "bigint" [not null, ref: > dim_institution.institution_key]
+  allocation_weight "numeric(12,10)" [not null]
+  indexes {
+    (work_key, institution_key) [pk]
+  }
+}

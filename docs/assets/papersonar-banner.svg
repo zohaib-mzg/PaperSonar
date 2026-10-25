@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="420" viewBox="0 0 1600 420" role="img" aria-labelledby="title desc">
+  <title id="title">PaperSonar</title>
+  <desc id="desc">Research intelligence. Publication trends, citation context, research communities. Abstract connected points appear within a radar motif.</desc>
+  <rect width="1600" height="420" fill="#F5F2EB"/>
+  <rect x="0" y="0" width="10" height="420" fill="#355C58"/>
+  <g stroke="#355C58" fill="none" opacity="0.17">
+    <circle cx="1315" cy="210" r="155"/><circle cx="1315" cy="210" r="105"/><circle cx="1315" cy="210" r="55"/>
+    <path d="M1130 210H1500M1315 25V395M1205 100L1425 320M1205 320L1425 100"/>
+  </g>
+  <path d="M1315 210L1458 150A155 155 0 0 0 1390 74Z" fill="#355C58" opacity="0.08"/>
+  <g stroke="#355C58" stroke-width="2" opacity="0.55"><path d="M1240 140L1315 210L1400 260L1430 160L1315 210L1255 295M1240 140L1430 160" fill="none"/></g>
+  <g fill="#355C58"><circle cx="1240" cy="140" r="7"/><circle cx="1315" cy="210" r="9"/><circle cx="1400" cy="260" r="7"/><circle cx="1430" cy="160" r="7"/><circle cx="1255" cy="295" r="6"/></g>
+  <text x="95" y="110" font-family="Arial, sans-serif" font-size="19" letter-spacing="4" fill="#355C58">RESEARCH INTELLIGENCE</text>
+  <text x="90" y="222" font-family="Georgia, serif" font-size="100" fill="#202924">PaperSonar</text>
+  <text x="96" y="285" font-family="Arial, sans-serif" font-size="25" fill="#52605A">Publication trends. Citation context. Research communities.</text>
+  <text x="96" y="358" font-family="Arial, sans-serif" font-size="17" fill="#72604A">DESIGN BASELINE 1.0</text>
+</svg>
