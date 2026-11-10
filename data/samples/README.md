@@ -1,6 +1,6 @@
 # Source pilot
 
-These are actual source responses collected on 25 October 2026 to inspect fields and verify access. They are a small design pilot, not the final research corpus.
+These are actual source responses collected on 25 October 2026 to inspect fields and verify access. They are a small design pilot, not the final research corpus. The current v2 design adds Crossref, arXiv, DataCite and Zenodo as planned sources; no records from those four additional sources have been harvested into this sample folder.
 
 | File | Contents |
 | --- | --- |

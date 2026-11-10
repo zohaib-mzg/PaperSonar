@@ -1,15 +1,5 @@
-# Corpus configuration example
+# Configuration contract
 
-[corpus.example.json](corpus.example.json) makes the proposed source boundary visible. It is an illustrative configuration contract; no loader or ETL pipeline exists yet.
+`corpus.example.json` is a Phase 1 design example, not a runnable configuration. It records five source roles, proposed source-specific historical and incremental methods, corpus boundaries, free-only deployment rules, and the fact that Phase 2/3 have not started.
 
-Before implementing extraction:
-
-1. Inspect the candidate topic definitions and source work-type vocabulary.
-2. Measure complete topic and year partition counts.
-3. Finalize the inclusion rules and replace the draft corpus version.
-4. Set the partial-year cutoff to the intended extraction window.
-5. Recheck API access policies and enforce a free-budget stop in the client.
-
-The work-count target is not permission to truncate a query. The byte thresholds trigger review. They are proposed operating limits, not measured resource requirements.
-
-Keep credentials in a local ignored environment file. Never put an API key in this JSON.
+Before Phase 2: profile each source and topic, confirm API semantics and rate limits, estimate local storage, then freeze a versioned configuration. Do not interpret the 30,000–60,000 target as a hard cap or verified count. Each source must have its own watermark and independent run state.
