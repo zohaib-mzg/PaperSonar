@@ -1,20 +1,18 @@
 # PaperSonar Phase 1 documents
 
-Design baseline 1.0. Prepared on 25 October 2026.
+This folder contains the original publication-centered Phase 1 artifacts and the expanded v2 design baseline. The original documents are retained as history; they are not fully reconciled to the five-source scope. For the current expanded source plan, use [`v2/README.md`](v2/README.md), the v2 master baseline, v2 individual deliverables, and the v2 data dictionary.
 
-| Deliverable | Editable Word | PDF |
-| --- | --- | --- |
-| Project proposal | [DOCX](editable/01_PaperSonar_Project_proposal.docx) | [PDF](pdf/01_PaperSonar_Project_proposal.pdf) |
-| Business requirements | [DOCX](editable/02_PaperSonar_Business_requirements.docx) | [PDF](pdf/02_PaperSonar_Business_requirements.pdf) |
-| Business questions | [DOCX](editable/03_PaperSonar_Business_questions.docx) | [PDF](pdf/03_PaperSonar_Business_questions.pdf) |
-| Fact and dimension identification | [DOCX](editable/04_PaperSonar_Facts_and_dimensions.docx) | [PDF](pdf/04_PaperSonar_Facts_and_dimensions.pdf) |
-| Grain definitions | [DOCX](editable/05_PaperSonar_Grain_definitions.docx) | [PDF](pdf/05_PaperSonar_Grain_definitions.pdf) |
+## Original baseline (retained)
 
-Additional required files:
+The original proposal, business requirements, business questions, fact/dimension identification, grain definitions, 15-table/89-field dictionary, diagrams and publication-centered schema were prepared for the first OpenAlex-focused scope. They should not be submitted as a fully updated five-source model without reconciliation.
 
-- [Data dictionary in Excel](data-dictionary.xlsx): 15 tables and 89 fields, including keys, nullability, source mappings, and analytical definitions.
-- Schema overview: [PNG](../../architecture/diagrams/03_Dimensional_schema.png) and [PDF](../../architecture/diagrams/03_Dimensional_schema.pdf).
-- Complete warehouse relationships: [PNG](../../architecture/diagrams/06_Complete_relationships.png) and [PDF](../../architecture/diagrams/06_Complete_relationships.pdf).
-- [Conceptual and physical models](../../architecture/README.md).
+## Current v2 design baseline
 
-The question report contains fourteen questions. The documents describe proposed implementation behavior and do not claim that the warehouse, ETL, or dashboards are already operational.
+- [Master baseline DOCX](v2/PaperSonar_Phase1_Design_Baseline_v2.docx) and [PDF](v2/PaperSonar_Phase1_Design_Baseline_v2.pdf)
+- [Updated data dictionary](v2/data-dictionary-v2.xlsx)
+- [Five-source strategy](../../sources.md)
+- [Target architecture](../../architecture/diagrams/07_Target_architecture_v2.png)
+- [Incremental ingestion design](../../requirements/incremental-ingestion-design.md)
+- [Course requirements matrix](../../requirements/course-requirements-matrix.md)
+
+The v2 individual Phase 1 deliverables are in `v2/editable/` and `v2/pdf/`. No Phase 2 or Phase 3 implementation is included.

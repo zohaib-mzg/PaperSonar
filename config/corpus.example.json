@@ -1,40 +1,122 @@
 {
-  "status": "draft_requires_source_profiling",
-  "corpus_version": "software-engineering-draft-v1",
-  "candidate_topic_ids": [
-    "T10743",
-    "T12423",
-    "T12479"
+  "status": "phase_1_design_only_requires_profiling_before_freeze",
+  "design_version": "research-output-intelligence-v2",
+  "domain": "research_and_innovation_intelligence",
+  "resource_families": [
+    "publication",
+    "preprint",
+    "dataset",
+    "research_software",
+    "report",
+    "other_research_output"
   ],
-  "membership_rule": "any_supplied_topic_matches_an_admitted_topic",
+  "sources": {
+    "openalex": {
+      "priority": 1,
+      "role": "scholarly graph and bibliographic metadata",
+      "historical": "topic/year partitions with cursor paging; evaluate free public snapshot only after profiling",
+      "incremental": "bounded re-fetch and recent overlap; periodic full reconciliation; do not assume paid updated filters",
+      "identity": [
+        "openalex_id",
+        "normalized_doi"
+      ],
+      "initial_cadence": "monthly bounded refresh proposal"
+    },
+    "crossref": {
+      "priority": 2,
+      "role": "DOI metadata and reindex changes",
+      "historical": "fixed index-date partitions with cursor paging",
+      "incremental": "from-index-date plus until-index-date, overlap and watermark",
+      "identity": [
+        "crossref_doi",
+        "normalized_doi"
+      ],
+      "initial_cadence": "daily_or_weekly_proposal"
+    },
+    "arxiv": {
+      "priority": 3,
+      "role": "preprints, categories, abstracts and versions",
+      "historical": "OAI-PMH or bounded query backfill",
+      "incremental": "OAI-PMH datestamp from/until windows and version observations",
+      "identity": [
+        "arxiv_id",
+        "arxiv_version"
+      ],
+      "initial_cadence": "daily_proposal"
+    },
+    "datacite": {
+      "priority": 4,
+      "role": "datasets, software and registered research outputs",
+      "historical": "public API or OAI-PMH by resource type and window",
+      "incremental": "updated date query or OAI-PMH; validate semantics and overlap",
+      "identity": [
+        "datacite_doi",
+        "normalized_doi"
+      ],
+      "initial_cadence": "daily_or_weekly_proposal"
+    },
+    "zenodo": {
+      "priority": 5,
+      "role": "datasets, software, reports and versions",
+      "historical": "API pagination or OAI-PMH",
+      "incremental": "OAI-PMH datestamp windows; persist pages promptly; API for detail/backfill",
+      "identity": [
+        "zenodo_record_id",
+        "normalized_doi"
+      ],
+      "initial_cadence": "daily_or_weekly_proposal"
+    }
+  },
   "historical_baseline": {
     "from_publication_year": 2016,
-    "to_publication_year": 2025
+    "to_publication_year": 2025,
+    "status": "proposal_to_validate_by_source"
   },
   "partial_year": {
     "publication_year": 2026,
-    "to_publication_date": "2026-10-25",
-    "label": "partial"
+    "status": "partial_at_extraction_cutoff",
+    "rule": "compare only equivalent elapsed periods"
   },
-  "candidate_work_types": [
-    "article",
-    "review",
-    "preprint"
-  ],
-  "require_source_type_validation": true,
-  "target_admitted_work_count": {
+  "candidate_topics": {
+    "openalex_ids": [
+      "T10743",
+      "T12423",
+      "T12479"
+    ],
+    "status": "candidate_not_final",
+    "rule": "profile counts, coverage, overlap and source type before freezing"
+  },
+  "target_admitted_canonical_outputs": {
     "minimum": 30000,
     "maximum": 60000,
-    "is_hard_truncation_limit": false
+    "hard_truncation": false,
+    "status": "engineering_target_not_guaranteed"
   },
-  "reference_targets": "retain_out_of_scope_targets_as_stubs",
-  "refresh_strategy": "bounded_complete_refetch",
-  "supported_page_size": 100,
-  "resource_review_threshold_bytes": {
+  "incremental_contract": {
+    "separate_watermark_per_source": true,
+    "fixed_window_end": true,
+    "overlap_required": true,
+    "raw_page_before_checkpoint": true,
+    "advance_watermark_only_after_validation": true,
+    "upsert_by_source_native_id": true,
+    "preserve_raw_versions": true,
+    "title_only_auto_merge": false,
+    "partial_run_publishes_snapshot": false
+  },
+  "storage_budget_review_bytes": {
     "database": 2000000000,
     "compressed_raw": 1000000000
   },
-  "paid_api_usage_allowed": false,
-  "requires_free_api_key_for_full_cursor_traversal": true,
-  "notes": "Illustrative configuration contract. No configuration loader or ETL pipeline is implemented."
+  "platforms": {
+    "required_zero_cost": "local_postgresql",
+    "optional": "snowflake_trial_or_educational_credit_only",
+    "snowflake_permanent_free_assumed": false
+  },
+  "paid_services_allowed": false,
+  "implementation_status": {
+    "phase_1": "design_artifacts_and_pilot_exist; revise model and requirements",
+    "phase_2": "not_started",
+    "phase_3": "not_started"
+  },
+  "notes": "Design contract only. No source connectors, loader, schedule, or warehouse population is implemented."
 }

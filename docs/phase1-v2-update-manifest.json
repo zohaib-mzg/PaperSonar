@@ -1,0 +1,20 @@
+{
+  "repository": "PaperSonar",
+  "update": "Phase 1 expanded source strategy and architecture v2",
+  "date": "2026-11-10",
+  "status": {
+    "phase_1": "design update",
+    "phase_2": "not started",
+    "phase_3": "not started"
+  },
+  "new_primary_artifacts": [
+    "docs/architecture/diagrams/07_Target_architecture_v2.png",
+    "docs/sources.md",
+    "docs/requirements/incremental-ingestion-design.md",
+    "docs/requirements/course-requirements-matrix.md",
+    "docs/submissions/phase-1/v2/PaperSonar_Phase1_Design_Baseline_v2.docx",
+    "docs/submissions/phase-1/v2/PaperSonar_Phase1_Design_Baseline_v2.pdf",
+    "docs/submissions/phase-1/v2/data-dictionary-v2.xlsx"
+  ],
+  "caveat": "Existing publication-only schema and Phase 1 documents are retained; they must be reconciled with the expanded source-neutral model before Phase 2."
+}

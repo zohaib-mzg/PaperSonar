@@ -1,3 +1,4 @@
+// LEGACY Phase 1 publication-centered model. See diagrams/08_Logical_research_output_model_v2.dot and data-dictionary-v2.xlsx for expanded source-neutral target design.
 Table etl_run {
   run_id "bigserial" [pk, not null]
   started_at "timestamptz" [not null]

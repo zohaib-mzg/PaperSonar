@@ -1,4 +1,6 @@
--- PaperSonar proposed PostgreSQL physical model 1.0
+-- LEGACY PHASE 1 DESIGN: PaperSonar publication-centered PostgreSQL model 1.0
+-- This is NOT Phase 2 implementation and does NOT fully model the expanded five-source scope.
+-- Reconcile against docs/architecture/README.md and the v2 logical data dictionary before Phase 2.
 
 -- Design baseline. Execute against an empty database schema.
 

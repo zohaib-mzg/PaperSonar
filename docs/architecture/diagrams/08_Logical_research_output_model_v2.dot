@@ -1,0 +1,42 @@
+digraph Model {
+ graph [rankdir=LR, bgcolor="white", pad="0.25", nodesep="0.38", ranksep="0.65", splines=ortho, fontname="Arial", label="PAPERSONAR | SOURCE-NEUTRAL LOGICAL MODEL v2\nPhase 1 proposal — logical relationships, not physical DDL", labelloc=t, fontsize=19];
+ node [shape=record, style="filled", fontname="Arial", fontsize=9, color="#526777", fillcolor="#F7FAFC", margin="0.10,0.08"];
+ edge [color="#64748B", penwidth=1.2, arrowsize=0.7, fontname="Arial", fontsize=8];
+ source_record [label="{source_record|PK source_record_key\lsource_name + native_id\lraw path + payload hash\lfirst/last seen\lsource updated timestamp\l}",fillcolor="#FFF2DF"];
+ research_output [label="{research_output|PK research_output_key\lnormalized output type\ltitle / dates / language\lcanonical status / scope\l}",fillcolor="#DDF4EF",penwidth=2];
+ output_version [label="{output_version|PK output_version_key\lsource record / version ID\lversion label / observed at\lpayload hash / raw path\l}",fillcolor="#FFF2DF"];
+ output_observation [label="{output_observation|PK output + snapshot/run\lcited-by count when supplied\lOA/access state\lreference count when supplied\lsource state / observed date\l}",fillcolor="#E6F1FA"];
+ output_relationship [label="{output_relationship|PK relationship key\lfrom output / to output\lnormalized relation type\lsource relation label\lfirst/last seen / current state\l}",fillcolor="#E6F1FA"];
+ topic [label="{dim_topic|PK topic_key\lsource topic ID / name\ltaxonomy version / hierarchy\l}"];
+ person [label="{dim_person|PK person_key\lsource person IDs / ORCID\ldisplay name\l}"];
+ institution [label="{dim_institution|PK institution_key\lsource ID / ROR\lname / country / type\l}"];
+ output_type [label="{dim_output_type|PK output_type_key\lnormalized type / family\lsource type mappings\l}"];
+ venue [label="{dim_venue_repository|PK venue_key\lsource ID / name / kind\lISSN or repository identifier\l}"];
+ access [label="{dim_access_status|PK access_key\lnormalized status / licence\lsource / observed date context\l}"];
+ funder [label="{dim_funder|PK funder_key\lsource funder ID / name\l}"];
+ btopic [label="{bridge_output_topic|PK output + topic + taxonomy\lprimary flag / score\lallocation weight / provenance\l}",fillcolor="#F0EBFA"];
+ bcreator [label="{bridge_output_creator|PK output + person + role/source\lcreator order / role\lprovenance\l}",fillcolor="#F0EBFA"];
+ binstitution [label="{bridge_output_institution|PK output + institution + source\laffiliation role / allocation weight\lprovenance\l}",fillcolor="#F0EBFA"];
+ bfunder [label="{bridge_output_funder|PK output + funder + source\laward ID / provenance\l}",fillcolor="#F0EBFA"];
+ sync [label="{source_sync_state|PK source + stream\lwatermark / fixed window\lcursor or resumption token\lstatus / last successful run\l}",fillcolor="#E5F5EF"];
+ run [label="{etl_run|PK run_id\lstarted/completed/status\lconfig hash / manifest\lcounts / validation outcome\l}",fillcolor="#E5F5EF"];
+ output_type -> research_output [label="classifies"];
+ source_record -> research_output [label="maps to 0..1 canonical output"];
+ source_record -> output_version [label="has observed versions"];
+ research_output -> output_version [label="logical output has versions"];
+ research_output -> output_observation [label="observed on successful run"];
+ research_output -> output_relationship [label="from / to endpoints",dir=both];
+ research_output -> btopic [label="assigned topics"];
+ topic -> btopic [label="topic member"];
+ research_output -> bcreator [label="has creators"];
+ person -> bcreator [label="creator member"];
+ research_output -> binstitution [label="affiliated institutions"];
+ institution -> binstitution [label="institution member"];
+ research_output -> bfunder [label="funding links"];
+ funder -> bfunder [label="funder member"];
+ venue -> research_output [label="published/deposited at"];
+ access -> output_observation [label="observed access state"];
+ sync -> run [label="source state per run"];
+ run -> output_observation [label="publishes only after validation"];
+ {rank=same; research_output; source_record;}
+}
