@@ -81,6 +81,14 @@ jobs:
             SNOWFLAKE_DATABASE
             SNOWFLAKE_SCHEMA
             SNOWFLAKE_PRIVATE_KEY
+          # FIX: map the actual secrets so the presence check can see them.
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
         run: |
           missing=""
           for name in $REQUIRED_SECRETS; do
@@ -129,17 +137,22 @@ jobs:
     timeout-minutes: 120
     env:
       # Non-secret runtime configuration (editable here or via repo variables).
+      # FIX: PAPERSONAR_RAW_DIR removed from here; `runner` context is not
+      # available at job level. It is set in a step below via $RUNNER_TEMP.
       OPENALEX_ENABLED: "true"
       CROSSREF_ENABLED: "true"
       ARXIV_ENABLED: "true"
       DATACITE_ENABLED: "true"
       ZENODO_ENABLED: "true"
-      PAPERSONAR_RAW_DIR: ${{ runner.temp }}/papersonar-raw
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: Set raw payload directory
+        run: |
+          echo "PAPERSONAR_RAW_DIR=$RUNNER_TEMP/papersonar-raw" >> "$GITHUB_ENV"
+          mkdir -p "$RUNNER_TEMP/papersonar-raw"
       - name: Install pinned dependencies
         run: |
           python -m pip install --upgrade pip
@@ -156,6 +169,16 @@ jobs:
             SNOWFLAKE_PRIVATE_KEY
             OPENALEX_API_KEY
             CROSSREF_CONTACT_EMAIL
+          # FIX: map the actual secrets so the presence check can see them.
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          CROSSREF_CONTACT_EMAIL: ${{ secrets.CROSSREF_CONTACT_EMAIL }}
         run: |
           missing=""
           for name in $REQUIRED_SECRETS; do
