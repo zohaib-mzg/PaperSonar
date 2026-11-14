@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "10.5555/dc-one",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5555/dc-one",
+        "titles": [{"title": "DataCite test dataset one"}],
+        "publisher": {"name": "Test Repository"},
+        "publicationYear": 2022,
+        "dates": [{"date": "2022-04-01", "dateType": "Issued"}],
+        "updated": "2026-01-20T10:00:00Z",
+        "resourceTypeGeneral": "Dataset",
+        "resourceType": "Dataset",
+        "creators": [
+          {
+            "name": "Grace Hopper",
+            "nameIdentifiers": [{"nameIdentifier": "https://orcid.org/0000-0002-1111-1111", "schemeURI": "https://orcid.org"}],
+            "affiliation": [{"name": "Navy Data Lab", "affiliationIdentifier": "https://ror.org/02mhbdp94"}]
+          }
+        ],
+        "relatedIdentifiers": [
+          {"relatedIdentifier": "10.5555/paper", "relationType": "IsSupplementTo", "relatedIdentifierType": "DOI"}
+        ],
+        "url": "https://example.org/dc-one",
+        "state": "findable"
+      }
+    },
+    {
+      "id": "10.5555/dc-two",
+      "type": "dois",
+      "attributes": {
+        "doi": "10.5555/dc-two",
+        "titles": [],
+        "publicationYear": 2023,
+        "updated": "2026-01-21T10:00:00Z",
+        "resourceTypeGeneral": "Software"
+      }
+    }
+  ],
+  "links": {
+    "next": "https://api.datacite.org/dois?page%5Bcursor%5D=next-cursor-token&sort=-updated"
+  }
+}
