@@ -232,9 +232,9 @@ class SnowflakeAdapter:
         )
 
     def get_file(self, stage_path: str, local_path: Path) -> None:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
         target = local_path.parent.as_posix()
         self.execute(f"GET @{_stage_ref(stage_path)} 'file://{target}' PARALLEL=1")
-        local_path.parent.mkdir(parents=True, exist_ok=True)
 
     # -- transactions --------------------------------------------------------
 

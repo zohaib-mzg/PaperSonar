@@ -151,6 +151,7 @@ class FakeWarehouse:
         self.stage[stage_path] = local_path.read_bytes()
 
     def get_file(self, stage_path: str, local_path: Path) -> None:
+        local_path.parent.mkdir(parents=True, exist_ok=True)
         local_path.write_bytes(self.stage[stage_path])
 
     def begin(self) -> None:
