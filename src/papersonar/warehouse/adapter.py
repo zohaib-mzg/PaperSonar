@@ -296,6 +296,5 @@ def _is_json_value(value: Any) -> bool:
 def _split_statements(sql_text: str) -> list[str]:
     """Snowflake-aware statement split (see papersonar.warehouse.sqlsplit)."""
     from papersonar.warehouse.sqlsplit import split_sql_statements
-
-
     return split_sql_statements(sql_text)
+

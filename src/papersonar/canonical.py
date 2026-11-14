@@ -84,6 +84,9 @@ class CanonicalResolver:
     def __init__(self, warehouse: Warehouse, source_priority: tuple[str, ...] = DEFAULT_SOURCE_PRIORITY) -> None:
         self._warehouse = warehouse
         self.source_priority = source_priority
+        # Per-batch read caches (None = not prefetching; fall back to single-row queries).
+        self._dim_cache: dict[str, dict[str, Any] | None] | None = None
+        self._xw_cache: dict[tuple[str, str], dict[str, Any] | None] | None = None
 
     # -- public API ----------------------------------------------------------
 
@@ -94,11 +97,55 @@ class CanonicalResolver:
         for row in rows:
             by_key.setdefault(self.work_key_for(row), []).append(row)
         now = utc_now()
-        for work_key, group in sorted(by_key.items()):
-            resolved = self._resolve_work(work_key, group, run_id, now, outcome)
-            if resolved:
-                outcome.works_resolved += 1
+        self._prefetch(list(by_key), rows)
+        try:
+            for work_key, group in sorted(by_key.items()):
+                resolved = self._resolve_work(work_key, group, run_id, now, outcome)
+                if resolved:
+                    outcome.works_resolved += 1
+        finally:
+            self._dim_cache = None
+            self._xw_cache = None
         return outcome
+
+    def _prefetch(self, work_keys: list[str], rows: list[StagingRow]) -> None:
+        """Bulk-load existing DIM_WORK and crosswalk rows for this batch."""
+        dim_columns = ", ".join(_DIM_WORK_COLUMNS)
+        dim_cache: dict[str, dict[str, Any] | None] = {key: None for key in work_keys}
+        for chunk in _chunks(sorted(work_keys)):
+            marks = ", ".join(["%s"] * len(chunk))
+            result = self._warehouse.execute(
+                f"SELECT WORK_KEY, {dim_columns} FROM PROJECT_DW.DIM_WORK WHERE WORK_KEY IN ({marks})",
+                list(chunk),
+            )
+            for found in result or []:
+                if dim_cache.get(found[0]) is None:
+                    dim_cache[found[0]] = dict(zip(_DIM_WORK_COLUMNS, found[1:], strict=True))
+
+        ids_by_source: dict[str, set[str]] = {}
+        for row in rows:
+            if row.source_record_id:
+                ids_by_source.setdefault(row.source_name, set()).add(row.source_record_id)
+        xw_columns = ", ".join(_CROSSWALK_COLUMNS)
+        xw_cache: dict[tuple[str, str], dict[str, Any] | None] = {
+            (source, record_id): None for source, ids in ids_by_source.items() for record_id in ids
+        }
+        for source, ids in sorted(ids_by_source.items()):
+            for chunk in _chunks(sorted(ids)):
+                marks = ", ".join(["%s"] * len(chunk))
+                result = self._warehouse.execute(
+                    f"SELECT SOURCE_NAME, SOURCE_RECORD_ID, {xw_columns} "
+                    "FROM PROJECT_DW.WORK_SOURCE_XW "
+                    f"WHERE SOURCE_NAME = %s AND SOURCE_RECORD_ID IN ({marks})",
+                    [source, *chunk],
+                )
+                for found in result or []:
+                    if xw_cache.get((found[0], found[1])) is None:
+                        xw_cache[(found[0], found[1])] = dict(
+                            zip(_CROSSWALK_COLUMNS, found[2:], strict=True)
+                        )
+        self._dim_cache = dim_cache
+        self._xw_cache = xw_cache
 
     def work_key_for(self, row: StagingRow) -> str:
         doi = row.doi_normalized or normalize_doi(row.doi_raw)
@@ -253,6 +300,8 @@ class CanonicalResolver:
     # -- warehouse reads -----------------------------------------------------
 
     def _get_dim_work(self, work_key: str) -> dict[str, Any] | None:
+        if self._dim_cache is not None and work_key in self._dim_cache:
+            return self._dim_cache[work_key]
         columns = ", ".join(_DIM_WORK_COLUMNS)
         rows = self._warehouse.execute(
             f"SELECT {columns} FROM PROJECT_DW.DIM_WORK WHERE WORK_KEY = %s", [work_key]
@@ -262,6 +311,9 @@ class CanonicalResolver:
         return dict(zip(_DIM_WORK_COLUMNS, rows[0], strict=True))
 
     def _get_crosswalk(self, source_name: str, source_record_id: str) -> dict[str, Any] | None:
+        cache_key = (source_name, source_record_id)
+        if self._xw_cache is not None and cache_key in self._xw_cache:
+            return self._xw_cache[cache_key]
         columns = ", ".join(_CROSSWALK_COLUMNS)
         rows = self._warehouse.execute(
             f"SELECT {columns} FROM PROJECT_DW.WORK_SOURCE_XW "
@@ -271,6 +323,13 @@ class CanonicalResolver:
         if not rows:
             return None
         return dict(zip(_CROSSWALK_COLUMNS, rows[0], strict=True))
+
+
+_PREFETCH_CHUNK = 500
+
+
+def _chunks(items: list[str], size: int = _PREFETCH_CHUNK) -> list[list[str]]:
+    return [items[i : i + size] for i in range(0, len(items), size)]
 
 
 def _loose_key(title: str) -> str:

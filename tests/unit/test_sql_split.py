@@ -115,7 +115,6 @@ class TestRealMigrationFiles:
         """The full migration path through execute_script (the live failure mode)."""
         from papersonar.warehouse.migration_runner import MigrationRunner
         from tests.fakes.fake_warehouse import FakeWarehouse
-
         warehouse = FakeWarehouse()
         runner = MigrationRunner(warehouse)
         applied = runner.apply_all()

@@ -224,6 +224,20 @@ def _parse_where(where_sql: str | None, params: list[Any]) -> list[tuple[str, st
     parts = re.split(r"\bAND\b", where_sql, flags=re.I)
     param_index = 0
     for part in parts:
+        in_match = re.match(r"\s*([A-Za-z0-9_]+)\s+IN\s*\(([^)]*)\)\s*$", part.strip(), re.I)
+        if in_match:
+            in_values: list[Any] = []
+            for item in in_match.group(2).split(","):
+                item = item.strip()
+                if item == "%s":
+                    if param_index >= len(params):
+                        raise NotImplementedError("FakeWarehouse WHERE requires literal params")
+                    in_values.append(params[param_index])
+                    param_index += 1
+                else:
+                    in_values.append(_parse_literal(item))
+            filters.append((in_match.group(1).upper(), "in", in_values))
+            continue
         match = re.match(
             r"\s*([A-Za-z0-9_]+)\s*(=|!=|<>)\s*(%s|'[^']*'|\"[^\"]*\"|[A-Za-z0-9_.\-]+)\s*$",
             part.strip(),
@@ -249,6 +263,8 @@ def _cmp(left: Any, op: str, right: Any) -> bool:
         return _eq(left, right)
     if op == "!=":
         return not _eq(left, right)
+    if op == "in":
+        return any(_eq(left, candidate) for candidate in right)
     raise NotImplementedError(f"FakeWarehouse operator {op}")
 
 
