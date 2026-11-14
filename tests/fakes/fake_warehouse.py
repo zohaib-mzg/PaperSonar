@@ -47,10 +47,29 @@ class FakeWarehouse:
         return []
 
     def _select(self, sql: str, params: list[Any] | tuple[Any, ...] | None) -> list[tuple]:
-        # Supports: SELECT cols FROM table WHERE col = %s [AND col2 = %s] [ORDER BY ...]
+        # Supports:
+        #   SELECT cols FROM table [WHERE ...] [ORDER BY ...]
+        #   SELECT COUNT(*) FROM table [WHERE ...]
+        flat = " ".join(sql.split())
+        count_match = re.match(
+            r"SELECT COUNT\(\*\) FROM ([A-Za-z0-9_.]+)(?: WHERE (.+))?$", flat, re.I
+        )
+        if count_match:
+            table_name, where_sql = count_match.groups()
+            table = self.tables.get(table_name.upper())
+            if table is None:
+                return [(0,)]
+            params = list(params or [])
+            filters = _parse_where(where_sql, params)
+            count = sum(
+                1
+                for row in table.rows
+                if all(_cmp(row.get(col.upper()), op, value) for col, op, value in filters)
+            )
+            return [(count,)]
         match = re.match(
             r"SELECT (.+?) FROM ([A-Za-z0-9_.]+)(?: WHERE (.+?))?(?: ORDER BY (.+))?$",
-            " ".join(sql.split()),
+            flat,
             re.I,
         )
         if not match:
@@ -63,7 +82,7 @@ class FakeWarehouse:
         filters = _parse_where(where_sql, params)
         out = []
         for row in table.rows:
-            if all(_eq(row.get(col.upper()), value) for col, value in filters):
+            if all(_cmp(row.get(col.upper()), op, value) for col, op, value in filters):
                 projected = [c.strip() for c in cols_sql.split(",")]
                 out.append(tuple(row.get(c.upper()) for c in projected))
         return out
@@ -98,7 +117,7 @@ class FakeWarehouse:
                 set_pairs.append((col, _parse_literal(assign.group(2))))
         filters = _parse_where(where_sql, params[param_index:])
         for row in table.rows:
-            if all(_eq(row.get(col.upper()), value) for col, value in filters):
+            if all(_cmp(row.get(col.upper()), op, value) for col, op, value in filters):
                 for col, value in set_pairs:
                     row[col] = value
         return []
@@ -142,10 +161,29 @@ class FakeWarehouse:
         return len(rows)
 
     def execute_script(self, sql_text: str) -> None:
-        for statement in (s.strip() for s in sql_text.split(";")):
-            if not statement:
-                continue
+        from papersonar.warehouse.sqlsplit import split_sql_statements
+
+        for statement in split_sql_statements(sql_text):
             self.executed.append(statement.split("\n")[0][:120])
+            self._materialize(statement)
+
+    def _materialize(self, statement: str) -> None:
+        """Materialize CREATE TABLE statements so SELECTs against new tables work."""
+        match = re.search(r"CREATE TABLE IF NOT EXISTS ([A-Za-z0-9_.]+)\s*\(", statement, re.I)
+        if not match:
+            return
+        table_name = match.group(1).upper()
+        if table_name in self.tables:
+            return
+        columns: list[str] = []
+        for line in statement.splitlines():
+            column_match = re.match(
+                r"^\s{2}([A-Z][A-Z0-9_]+)\s+(STRING|NUMBER|BOOLEAN|FLOAT|VARIANT|ARRAY|DATE|TIMESTAMP_TZ)\b",
+                line,
+            )
+            if column_match:
+                columns.append(column_match.group(1))
+        self.tables[table_name] = Table(columns=columns)
 
     def put_file(self, local_path: Path, stage_path: str) -> None:
         self.stage[stage_path] = local_path.read_bytes()
@@ -177,22 +215,41 @@ class FakeWarehouse:
             raise CheckpointError("simulated database failure")
 
 
-def _parse_where(where_sql: str | None, params: list[Any]) -> list[tuple[str, Any]]:
+def _parse_where(where_sql: str | None, params: list[Any]) -> list[tuple[str, str, Any]]:
+    """Return (column, operator, value) triples. Supports = and != with bound
+    params or SQL literals (quoted strings, TRUE/FALSE/NULL/numbers)."""
     if not where_sql:
         return []
-    filters: list[tuple[str, Any]] = []
+    filters: list[tuple[str, str, Any]] = []
     parts = re.split(r"\bAND\b", where_sql, flags=re.I)
     param_index = 0
     for part in parts:
-        match = re.match(r"\s*([A-Za-z0-9_]+)\s*=\s*%s\s*$", part.strip())
+        match = re.match(
+            r"\s*([A-Za-z0-9_]+)\s*(=|!=|<>)\s*(%s|'[^']*'|\"[^\"]*\"|[A-Za-z0-9_.\-]+)\s*$",
+            part.strip(),
+        )
         if not match:
             raise NotImplementedError(f"FakeWarehouse cannot parse WHERE fragment: {part}")
         col = match.group(1).upper()
-        if param_index >= len(params):
-            raise NotImplementedError("FakeWarehouse WHERE requires literal params")
-        filters.append((col, params[param_index]))
-        param_index += 1
+        op = "=" if match.group(2) == "=" else "!="
+        raw = match.group(3)
+        if raw == "%s":
+            if param_index >= len(params):
+                raise NotImplementedError("FakeWarehouse WHERE requires literal params")
+            value = params[param_index]
+            param_index += 1
+        else:
+            value = _parse_literal(raw)
+        filters.append((col, op, value))
     return filters
+
+
+def _cmp(left: Any, op: str, right: Any) -> bool:
+    if op == "=":
+        return _eq(left, right)
+    if op == "!=":
+        return not _eq(left, right)
+    raise NotImplementedError(f"FakeWarehouse operator {op}")
 
 
 def _parse_literal(text: str) -> Any:

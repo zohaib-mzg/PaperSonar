@@ -46,7 +46,7 @@ class HttpClient:
         self._backoff_max = backoff_max_seconds
         self._rate_delay = rate_delay_seconds
         self._user_agent = user_agent
-        self._sleep = sleep
+        self._sleep = sleep if sleep is not None else time.sleep
         self.retry_count = 0
         self._session = session or requests.Session()
 

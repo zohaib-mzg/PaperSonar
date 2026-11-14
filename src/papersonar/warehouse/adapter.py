@@ -10,6 +10,7 @@ is a testing technique and never a production fallback.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Sequence
 from pathlib import Path
@@ -176,9 +177,16 @@ class SnowflakeAdapter:
         row_selects = []
         params: list[Any] = []
         for row in rows:
-            aliases = ", ".join(f"%s AS {c}" for c in columns)
-            row_selects.append(f"SELECT {aliases}")
-            params.extend(row)
+            parts = []
+            for column, value in zip(columns, row, strict=True):
+                if _is_json_value(value):
+                    # dict/list -> JSON text, parsed to VARIANT inside Snowflake.
+                    parts.append(f"PARSE_JSON(%s) AS {column}")
+                    params.append(json.dumps(value, default=str))
+                else:
+                    parts.append(f"%s AS {column}")
+                    params.append(value)
+            row_selects.append("SELECT " + ", ".join(parts))
         source_sql = "\nUNION ALL\n".join(row_selects)
         on_clause = " AND ".join(f"t.{k} = s.{k}" for k in key_columns)
         if update_columns:
@@ -205,12 +213,26 @@ class SnowflakeAdapter:
     def insert_rows(self, table: str, columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> int:
         if not rows:
             return 0
-        placeholders = ", ".join("%s" for _ in columns)
+        # Columns holding dict/list values are sent as JSON text and parsed to VARIANT.
+        json_cols = {i for i in range(len(columns)) if any(_is_json_value(r[i]) for r in rows)}
+        placeholders = ", ".join(
+            "PARSE_JSON(%s)" if i in json_cols else "%s" for i in range(len(columns))
+        )
         col_list = ", ".join(columns)
-        sql = f"INSERT INTO {table} ({col_list}) VALUES ({placeholders})"
+        # PARSE_JSON is not allowed inside VALUES, so this uses INSERT ... SELECT.
+        sql = f"INSERT INTO {table} ({col_list}) SELECT {placeholders}"
+        prepared = [
+            [
+                json.dumps(v, default=str) if i in json_cols and v is not None else v
+                for i, v in enumerate(r)
+            ]
+            for r in rows
+        ]
         cursor = self._conn.cursor()
         try:
-            cursor.executemany(sql, [list(r) for r in rows])
+            # executemany() only supports INSERT ... VALUES, so run one statement per row.
+            for params in prepared:
+                cursor.execute(sql, params)
             return len(rows)
         finally:
             cursor.close()
@@ -228,13 +250,13 @@ class SnowflakeAdapter:
     def put_file(self, local_path: Path, stage_path: str) -> None:
         remote = local_path.as_posix()
         self.execute(
-            f"PUT 'file://{remote}' @{_stage_ref(stage_path)} PARALLEL=1 AUTO_COMPRESS=FALSE OVERWRITE=TRUE"
+            f"PUT 'file://{remote}' {_stage_ref(stage_path)} PARALLEL=1 AUTO_COMPRESS=FALSE OVERWRITE=TRUE"
         )
 
     def get_file(self, stage_path: str, local_path: Path) -> None:
         local_path.parent.mkdir(parents=True, exist_ok=True)
         target = local_path.parent.as_posix()
-        self.execute(f"GET @{_stage_ref(stage_path)} 'file://{target}' PARALLEL=1")
+        self.execute(f"GET {_stage_ref(stage_path)} 'file://{target}' PARALLEL=1")
 
     # -- transactions --------------------------------------------------------
 
@@ -266,6 +288,13 @@ def _chunk(seq: Sequence[Any], size: int) -> list[Sequence[Any]]:
     return [seq[i : i + size] for i in range(0, len(seq), size)]
 
 
+def _is_json_value(value: Any) -> bool:
+    """True for values the Snowflake connector cannot bind directly (dict/list)."""
+    return isinstance(value, (dict, list))
+
+
 def _split_statements(sql_text: str) -> list[str]:
-    statements = [s.strip() for s in sql_text.split(";")]
-    return [s for s in statements if s]
+    """Snowflake-aware statement split (see papersonar.warehouse.sqlsplit)."""
+    from papersonar.warehouse.sqlsplit import split_sql_statements
+
+    return split_sql_statements(sql_text)

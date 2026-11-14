@@ -1,0 +1,195 @@
+-- 002_dimensional_warehouse.sql
+-- PaperSonar Phase 2 dimensional warehouse (source-neutral v2 model).
+-- Non-destructive: every object uses IF NOT EXISTS. Names reconcile with the
+-- approved data dictionary / DDL direction (dim_*, fact_*, bridge_* tables).
+-- Natural, deterministic keys (source-qualified IDs and normalized values) are
+-- used instead of generated surrogate keys so MERGE-based loads are idempotent.
+
+-- ---------------------------------------------------------------------------
+-- Canonical work dimension + source crosswalk (identity resolution layer)
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_WORK (
+  WORK_KEY            STRING        NOT NULL, -- 'doi:<normalized>' or 'src:<source>:<record>'
+  DOI_NORMALIZED      STRING,
+  TITLE               STRING,
+  TITLE_NORMALIZED    STRING,
+  PUBLICATION_DATE    STRING,
+  PUBLICATION_YEAR    NUMBER,
+  WORK_TYPE           STRING,
+  VENUE_NAME          STRING,
+  OA_IS_OA            BOOLEAN,
+  OA_STATUS           STRING,
+  CITED_BY_COUNT      NUMBER,
+  SOURCE_PRIORITY     STRING,       -- source that supplied current canonical values
+  FIRST_SEEN_AT       TIMESTAMP_TZ,
+  LAST_UPDATED_AT     TIMESTAMP_TZ,
+  CONSTRAINT PK_DIM_WORK PRIMARY KEY (WORK_KEY)
+)
+COMMENT = 'Canonical scholarly works. One row per resolved identity; MERGE-upserted.';
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.WORK_SOURCE_XW (
+  SOURCE_NAME        STRING NOT NULL,
+  SOURCE_RECORD_ID   STRING NOT NULL,
+  WORK_KEY           STRING NOT NULL,
+  DOI_NORMALIZED     STRING,
+  FIRST_SEEN_AT      TIMESTAMP_TZ,
+  LAST_SEEN_AT       TIMESTAMP_TZ,
+  CONSTRAINT PK_WORK_SOURCE_XW PRIMARY KEY (SOURCE_NAME, SOURCE_RECORD_ID)
+)
+COMMENT = 'Source-record to canonical-work crosswalk. The approved identity resolution path.';
+
+-- ---------------------------------------------------------------------------
+-- Dimensions (unknown member: key '-1', name 'Unknown')
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_DATE (
+  DATE_KEY     NUMBER      NOT NULL, -- YYYYMMDD; 0 = unknown member
+  FULL_DATE    DATE,
+  YEAR_NUMBER  NUMBER,
+  QUARTER      NUMBER,
+  MONTH_NUMBER NUMBER,
+  MONTH_NAME   STRING,
+  DAY_OF_MONTH NUMBER,
+  DAY_OF_WEEK  NUMBER,
+  IS_WEEKEND   BOOLEAN,
+  CONSTRAINT PK_DIM_DATE PRIMARY KEY (DATE_KEY)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_TOPIC (
+  TOPIC_KEY   STRING NOT NULL, -- '<source>:<topic_id>' or '<source>:name:<hash>'
+  SOURCE_NAME STRING NOT NULL,
+  TOPIC_ID    STRING,
+  TOPIC_NAME  STRING,
+  CONSTRAINT PK_DIM_TOPIC PRIMARY KEY (TOPIC_KEY)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_VENUE (
+  VENUE_KEY   STRING NOT NULL,
+  SOURCE_NAME STRING NOT NULL,
+  VENUE_ID    STRING,
+  VENUE_NAME  STRING,
+  CONSTRAINT PK_DIM_VENUE PRIMARY KEY (VENUE_KEY)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_WORK_TYPE (
+  WORK_TYPE_KEY  STRING NOT NULL, -- normalized type; '-1' = unknown
+  WORK_TYPE_NAME STRING NOT NULL,
+  CONSTRAINT PK_DIM_WORK_TYPE PRIMARY KEY (WORK_TYPE_KEY)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_ACCESS_STATUS (
+  ACCESS_STATUS_KEY  STRING NOT NULL, -- normalized OA status; '-1' = unknown
+  ACCESS_STATUS_NAME STRING NOT NULL,
+  CONSTRAINT PK_DIM_ACCESS_STATUS PRIMARY KEY (ACCESS_STATUS_KEY)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_AUTHOR (
+  AUTHOR_KEY   STRING NOT NULL, -- '<source>:<author_id>' or '<source>:name:<hash>'
+  SOURCE_NAME  STRING NOT NULL,
+  AUTHOR_ID    STRING,
+  AUTHOR_NAME  STRING,
+  ORCID        STRING,
+  CONSTRAINT PK_DIM_AUTHOR PRIMARY KEY (AUTHOR_KEY)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.DIM_INSTITUTION (
+  INSTITUTION_KEY   STRING NOT NULL,
+  SOURCE_NAME       STRING NOT NULL,
+  INSTITUTION_ID    STRING,
+  INSTITUTION_NAME  STRING,
+  CONSTRAINT PK_DIM_INSTITUTION PRIMARY KEY (INSTITUTION_KEY)
+);
+
+-- ---------------------------------------------------------------------------
+-- Facts
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS PROJECT_DW.FACT_PUBLICATION (
+  WORK_KEY          STRING NOT NULL,
+  DOI_NORMALIZED    STRING,
+  PUBLICATION_DATE  STRING,
+  PUBLICATION_YEAR  NUMBER,
+  WORK_TYPE_KEY     STRING,
+  VENUE_KEY         STRING,
+  ACCESS_STATUS_KEY STRING,
+  CITED_BY_COUNT    NUMBER,
+  SOURCE_PRIORITY   STRING,
+  FIRST_SEEN_AT     TIMESTAMP_TZ,
+  LAST_UPDATED_AT   TIMESTAMP_TZ,
+  CONSTRAINT PK_FACT_PUBLICATION PRIMARY KEY (WORK_KEY)
+)
+COMMENT = 'Publication-level facts. Grain: one row per canonical work.';
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.FACT_WORK_SNAPSHOT (
+  WORK_KEY            STRING  NOT NULL,
+  SNAPSHOT_DATE_KEY   NUMBER  NOT NULL, -- YYYYMMDD run date
+  CITED_BY_COUNT      NUMBER,
+  OA_IS_OA            BOOLEAN,
+  OA_STATUS           STRING,
+  RUN_ID              STRING,
+  CONSTRAINT PK_FACT_WORK_SNAPSHOT PRIMARY KEY (WORK_KEY, SNAPSHOT_DATE_KEY)
+)
+COMMENT = 'Periodic snapshots of work metrics. Grain: one row per work per run date.';
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.FACT_CITATION (
+  WORK_KEY        STRING NOT NULL, -- citing work
+  CITED_WORK_KEY  STRING,          -- resolved canonical key of the cited work (NULL until resolved)
+  CITED_DOI       STRING,
+  CITED_PROVIDER_ID STRING,
+  SOURCE_NAME     STRING NOT NULL,
+  FIRST_SEEN_AT   TIMESTAMP_TZ,
+  CONSTRAINT PK_FACT_CITATION PRIMARY KEY (WORK_KEY, CITED_DOI, CITED_PROVIDER_ID, SOURCE_NAME)
+)
+COMMENT = 'Typed citation/reference edges. Grain: one row per citing-cited pair per source.';
+
+-- ---------------------------------------------------------------------------
+-- Bridges
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS PROJECT_DW.BRIDGE_WORK_TOPIC (
+  WORK_KEY    STRING NOT NULL,
+  TOPIC_KEY   STRING NOT NULL,
+  IS_PRIMARY  BOOLEAN DEFAULT FALSE,
+  SCORE       FLOAT,
+  SOURCE_NAME STRING NOT NULL,
+  CONSTRAINT PK_BRIDGE_WORK_TOPIC PRIMARY KEY (WORK_KEY, TOPIC_KEY, SOURCE_NAME)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.BRIDGE_WORK_AUTHOR (
+  WORK_KEY    STRING NOT NULL,
+  AUTHOR_KEY  STRING NOT NULL,
+  POSITION    STRING,
+  SOURCE_NAME STRING NOT NULL,
+  CONSTRAINT PK_BRIDGE_WORK_AUTHOR PRIMARY KEY (WORK_KEY, AUTHOR_KEY, SOURCE_NAME)
+);
+
+CREATE TABLE IF NOT EXISTS PROJECT_DW.BRIDGE_WORK_INSTITUTION (
+  WORK_KEY         STRING NOT NULL,
+  INSTITUTION_KEY  STRING NOT NULL,
+  AUTHOR_KEY       STRING,
+  SOURCE_NAME      STRING NOT NULL,
+  CONSTRAINT PK_BRIDGE_WORK_INSTITUTION PRIMARY KEY (WORK_KEY, INSTITUTION_KEY, AUTHOR_KEY, SOURCE_NAME)
+);
+
+-- ---------------------------------------------------------------------------
+-- Unknown member seeds (reserved key 0 for dates, '-1' for the rest)
+-- ---------------------------------------------------------------------------
+INSERT INTO PROJECT_DW.DIM_DATE
+  (DATE_KEY, FULL_DATE, YEAR_NUMBER, QUARTER, MONTH_NUMBER, MONTH_NAME, DAY_OF_MONTH, DAY_OF_WEEK, IS_WEEKEND)
+SELECT 0, NULL, NULL, NULL, NULL, 'Unknown', NULL, NULL, FALSE
+WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIM_DATE WHERE DATE_KEY = 0);
+
+INSERT INTO PROJECT_DW.DIM_WORK_TYPE (WORK_TYPE_KEY, WORK_TYPE_NAME)
+SELECT '-1', 'Unknown' WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIM_WORK_TYPE WHERE WORK_TYPE_KEY = '-1');
+
+INSERT INTO PROJECT_DW.DIM_ACCESS_STATUS (ACCESS_STATUS_KEY, ACCESS_STATUS_NAME)
+SELECT '-1', 'Unknown' WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIM_ACCESS_STATUS WHERE ACCESS_STATUS_KEY = '-1');
+
+INSERT INTO PROJECT_DW.DIM_TOPIC (TOPIC_KEY, SOURCE_NAME, TOPIC_ID, TOPIC_NAME)
+SELECT '-1', 'unknown', NULL, 'Unknown' WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIM_TOPIC WHERE TOPIC_KEY = '-1');
+
+INSERT INTO PROJECT_DW.DIM_VENUE (VENUE_KEY, SOURCE_NAME, VENUE_ID, VENUE_NAME)
+SELECT '-1', 'unknown', NULL, 'Unknown' WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIM_VENUE WHERE VENUE_KEY = '-1');
+
+INSERT INTO PROJECT_DW.DIM_AUTHOR (AUTHOR_KEY, SOURCE_NAME, AUTHOR_ID, AUTHOR_NAME, ORCID)
+SELECT '-1', 'unknown', NULL, 'Unknown', NULL WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIM_AUTHOR WHERE AUTHOR_KEY = '-1');
+
+INSERT INTO PROJECT_DW.DIM_INSTITUTION (INSTITUTION_KEY, SOURCE_NAME, INSTITUTION_ID, INSTITUTION_NAME)
+SELECT '-1', 'unknown', NULL, 'Unknown' WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIM_INSTITUTION WHERE INSTITUTION_KEY = '-1');

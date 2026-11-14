@@ -22,15 +22,27 @@ class FakeResponse:
 
 
 class FakeSession:
-    """records requests and returns scripted responses."""
+    """records requests and returns scripted responses.
 
-    def __init__(self, responses: list[FakeResponse] | FakeResponse) -> None:
+    When the script is exhausted, ``terminal_response`` is returned (use an
+    empty/complete page so pagination loops end deterministically).
+    """
+
+    def __init__(
+        self, responses: list[FakeResponse] | FakeResponse, terminal_response: FakeResponse | None = None
+    ) -> None:
         self.responses = [responses] if isinstance(responses, FakeResponse) else responses
+        self.terminal_response = terminal_response
         self.calls: list[dict[str, Any]] = []
         self._index = 0
 
     def get(self, url: str, params=None, headers=None, timeout=None):  # noqa: ANN001
         self.calls.append({"url": url, "params": params, "headers": headers, "timeout": timeout})
-        response = self.responses[min(self._index, len(self.responses) - 1)]
+        if self._index < len(self.responses):
+            response = self.responses[self._index]
+        elif self.terminal_response is not None:
+            response = self.terminal_response
+        else:
+            response = self.responses[-1]
         self._index += 1
         return response

@@ -6,7 +6,7 @@
 
 PaperSonar is a design-stage research intelligence platform that connects scholarly publications, preprints, datasets, research software, authors/creators, institutions, citations and related-output relationships. It is designed to help users compare research directions using transparent counts, dated observations, source provenance and supporting evidence.
 
-> **Project state:** Phase 1 design and pilot artifacts exist. Phase 2 ingestion/warehouse implementation and Phase 3 analytics/BI implementation have **not started**. This repository update expands the Phase 1 target design; it does not claim that connectors, a populated warehouse, SQL analytics, dashboards, or a web product exist.
+> **Project state:** Phase 1 design artifacts exist. **Phase 2 ingestion/warehouse implementation is implemented at code level** (five source adapters, durable raw landing, staging/quarantine, canonical identity resolution, Snowflake MERGE-based warehouse loads, quality gate, orchestrated CLI and GitHub Actions workflow — 129 deterministic tests). **Live Snowflake verification and warehouse population are still pending** a no-cost Snowflake account and GitHub secrets; all live evidence is reported as BLOCKED in the [acceptance report](docs/phase2/ACCEPTANCE_REPORT.md). Phase 3 analytics/BI has not started.
 
 ## The problem PaperSonar addresses
 
@@ -49,9 +49,18 @@ Core layers: five source systems → independent source-specific harvesters → 
 
 Each source gets its own watermark, fixed extraction window, overlap, cursor/resumption token, run status and last-successful checkpoint. Raw pages and checksums must be persisted before the checkpoint advances. Changed records are upserted by source-native identity while prior raw observations are preserved. A partial or failed run cannot publish a warehouse snapshot. Missing from one response is not treated as deletion. See [incremental ingestion design](docs/requirements/incremental-ingestion-design.md).
 
-## Zero-cost platform strategy and Snowflake
+## Platform strategy and Snowflake (Phase 2 decision)
 
-The mandatory reproducible path is **local PostgreSQL + Python/open-source libraries + local files + Git + Draw.io/Graphviz + Power BI Desktop**. Snowflake is an optional compatibility target if a no-cost trial or educational allowance is available. It is not assumed to be permanently free and is not a dependency. The project must be reproducible without Snowflake, and trial use must stop before any charge. See [platform decision](docs/decisions/002-free-first-warehouse-and-snowflake.md).
+Phase 2 has one production target: **Snowflake**, accessed with key-pair
+authentication through the official Python connector. There is no PostgreSQL,
+SQLite, or local-database fallback for ingestion; deterministic tests use a
+mocked Snowflake adapter purely as a testing technique. Production runs must
+use a currently available **no-cost** Snowflake trial/credits offer — Snowflake
+is not guaranteed to be permanently free, paid resources are never activated,
+and if no no-cost offer is available, live deployment stops and is reported as
+**BLOCKED** (never switched to another database). Setup and operating
+instructions: [Phase 2 runbook](docs/phase2/RUNBOOK.md). Historical Phase 1
+free-first analysis: [platform decision](docs/decisions/002-free-first-warehouse-and-snowflake.md).
 
 ## Current dataset and scale
 
@@ -82,6 +91,11 @@ The lab's retail sales examples are not copied into PaperSonar. Implement the sa
 - `docs/decisions/` — recorded architecture choices.
 - `docs/submissions/phase-1/` — original Phase 1 artifacts retained for history.
 - `docs/submissions/phase-1/v2/` — expanded Phase 1 design baseline and revised data dictionary.
+- `docs/phase2/REPOSITORY_AUDIT.md` — Phase 2 Step 0 audit artifact.
+- `docs/phase2/SOURCE_CAPABILITY_MATRIX.md` — verified API facts and per-source implementation decisions.
+- `docs/phase2/RUNBOOK.md` — operator runbook: Snowflake setup, secrets, commands, recovery, troubleshooting.
+- `docs/phase2/ACCEPTANCE_REPORT.md` — requirement-to-evidence matrix (PASS / PASS-MOCK / BLOCKED).
+- `src/papersonar/` — Phase 2 pipeline implementation (`papersonar` CLI, five adapters, Snowflake warehouse layer).
 - `config/corpus.example.json` — non-runnable source/corpus design contract.
 - `database/schema/001_initial_schema.sql` — original publication-centered proposed schema; not a Phase 2 implementation and not sufficient alone for all five sources.
 - `data/samples/` — small pilot only; not a complete research corpus.
@@ -93,7 +107,7 @@ The lab's retail sales examples are not copied into PaperSonar. Implement the sa
 3. [ ] Profile topic/year/resource-type partitions and source overlap.
 4. [ ] Approve source-neutral logical model and revised physical dictionary.
 5. [ ] Freeze corpus boundary, storage budget, refresh cadence and free-service assumptions.
-6. [ ] Phase 2: implement independent harvesters, raw landing, staging, canonical identity, warehouse loading and quality gates.
+6. [~] Phase 2: harvesters, raw landing, staging, canonical identity, warehouse loading and quality gates — **code complete with mocked-Snowflake tests; live warehouse acceptance BLOCKED on no-cost Snowflake account + secrets**.
 7. [ ] Phase 3: implement analytical SQL, OLAP, reporting views, optimization report and Power BI deliverables.
 8. [ ] Validate evidence dossiers and direction-comparison workflow with researchers.
 
