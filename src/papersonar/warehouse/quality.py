@@ -109,12 +109,6 @@ class QualityGate:
         return int(rows[0][0] or 0)
 
     def _orphan_ratio(self) -> float:
-        """Share of crosswalk rows whose work_key has no DIM_WORK row.
-    
-        Two bulk SELECTs instead of one query per crosswalk row (the old
-        per-key loop issued thousands of round trips). Plain SELECTs keep it
-        working on Snowflake and the mock.
-        """
         crosswalk_keys = self._warehouse.execute(
             "SELECT WORK_KEY FROM PROJECT_DW.WORK_SOURCE_XW"
         )
