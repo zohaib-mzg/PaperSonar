@@ -139,7 +139,7 @@ jobs:
       # Non-secret runtime configuration (editable here or via repo variables).
       # FIX: PAPERSONAR_RAW_DIR removed from here; `runner` context is not
       # available at job level. It is set in a step below via $RUNNER_TEMP.
-      OPENALEX_ENABLED: "true"
+      OPENALEX_ENABLED: "false"
       CROSSREF_ENABLED: "true"
       ARXIV_ENABLED: "true"
       DATACITE_ENABLED: "true"
