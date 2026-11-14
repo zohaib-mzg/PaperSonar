@@ -119,7 +119,10 @@ class TestRealMigrationFiles:
         warehouse = FakeWarehouse()
         runner = MigrationRunner(warehouse)
         applied = runner.apply_all()
-        assert applied == ["001", "002", "003"]
+        # Derive expectations from the shipped migrations so adding migration
+        # 005+ does not require editing this test.
+        expected = [m.version for m in load_migrations()]
+        assert applied == expected
         # Re-run: exactly once, no errors, no duplicates
         assert runner.apply_all() == []
-        assert warehouse.count("PROJECT_OPS.SCHEMA_MIGRATION") == 3
+        assert warehouse.count("PROJECT_OPS.SCHEMA_MIGRATION") == len(expected)
