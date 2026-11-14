@@ -106,7 +106,7 @@ class TestOrchestrator:
         assert state.last_successful_watermark == f"{__import__('datetime').date.today().year}-12-31"
         # Migrations applied and warehouse populated (001, 002, 003)
         assert warehouse.count("PROJECT_DW.DIM_WORK") == 2
-        assert warehouse.count("PROJECT_OPS.SCHEMA_MIGRATION") == 3
+        assert warehouse.count("PROJECT_OPS.SCHEMA_MIGRATION") == 4
 
     def test_source_failure_marks_run_partial_and_keeps_watermark(self, tmp_path, monkeypatch):
         patch_build_adapters(monkeypatch, tmp_path, failing=True)
