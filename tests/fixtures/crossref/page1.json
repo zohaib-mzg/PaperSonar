@@ -1,0 +1,35 @@
+{
+  "status": "ok",
+  "message-type": "work-list",
+  "message": {
+    "next-cursor": "cursor-to-page-2",
+    "total-results": 3,
+    "items-per-page": 2,
+    "items": [
+      {
+        "DOI": "10.5555/one",
+        "title": ["Crossref item one"],
+        "type": "journal-article",
+        "container-title": ["Journal of Tests"],
+        "issued": {"date-parts": [[2020, 3, 14]]},
+        "indexed": {"date-time": "2026-01-25T12:00:00Z"},
+        "is-referenced-by-count": 7,
+        "references-count": 3,
+        "reference": [{"DOI": "10.5555/ref1"}, {"key": "no-doi-ref"}, {"DOI": "10.5555/ref2"}],
+        "author": [{"given": "Grace", "family": "Hopper", "ORCID": "https://orcid.org/0000-0003-1111-1111"}],
+        "publisher": "Test Press",
+        "URL": "https://doi.org/10.5555/one"
+      },
+      {
+        "id": "10.5555/two",
+        "DOI": "10.5555/two",
+        "title": ["Crossref item two"],
+        "type": "posted-content",
+        "issued": {"date-parts": [[2021]]},
+        "indexed": {"date-time": "2026-01-26T09:30:00Z"},
+        "is-referenced-by-count": 0,
+        "author": []
+      }
+    ]
+  }
+}

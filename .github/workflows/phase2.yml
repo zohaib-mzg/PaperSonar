@@ -1,0 +1,254 @@
+name: phase2-pipeline
+
+# PaperSonar Phase 2 pipeline.
+#
+# - Scheduled runs ALWAYS run the incremental `sync` mode, never backfill.
+# - Manual dispatch allows a constrained choice: sync | backfill | validate.
+# - Snowflake is the only production target; there is no database fallback.
+# - Missing secrets fail closed BEFORE any source API call is made.
+
+on:
+  schedule:
+    # Daily 04:30 UTC incremental sync. Per-source windows are bounded inside
+    # the application (crossref 2 days, datacite 2 days, arxiv 7 days,
+    # zenodo 1 day, openalex current-year reconciliation).
+    - cron: "30 4 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run mode (scheduled runs always use sync)"
+        required: true
+        default: "sync"
+        type: choice
+        options:
+          - sync
+          - backfill
+          - validate
+
+# Least privilege: the workflow only needs to read its own repository.
+permissions:
+  contents: read
+
+# Prevent overlapping ingestion runs against the same Snowflake account.
+concurrency:
+  group: phase2-ingestion
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  tests:
+    name: lint + deterministic tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Ruff lint
+        run: python -m ruff check src tests
+      - name: Deterministic tests (mocked Snowflake adapter, no network)
+        run: python -m pytest tests -q
+
+  validate:
+    name: validate (Snowflake smoke test + quality, no ingestion)
+    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'validate'
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Check required secrets are present (names only, never values)
+        env:
+          REQUIRED_SECRETS: >-
+            SNOWFLAKE_ACCOUNT
+            SNOWFLAKE_USER
+            SNOWFLAKE_ROLE
+            SNOWFLAKE_WAREHOUSE
+            SNOWFLAKE_DATABASE
+            SNOWFLAKE_SCHEMA
+            SNOWFLAKE_PRIVATE_KEY
+        run: |
+          missing=""
+          for name in $REQUIRED_SECRETS; do
+            if [ -z "$(eval "echo \${$name:-}")" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "MISSING SECRETS (names only):$missing" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Missing required secrets:$missing"
+            exit 1
+          fi
+          echo "All required secrets are present." >> "$GITHUB_STEP_SUMMARY"
+      - name: Snowflake smoke test (connectivity + migrations + counts)
+        env:
+          PAPERSONAR_TARGET: snowflake
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+        run: papersonar smoke-test
+      - name: Quality gate
+        env:
+          PAPERSONAR_TARGET: snowflake
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+        run: papersonar quality
+
+  ingest:
+    name: ingest (sync on schedule; sync|backfill on dispatch)
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && (inputs.mode == 'sync' || inputs.mode == 'backfill'))
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # Non-secret runtime configuration (editable here or via repo variables).
+      OPENALEX_ENABLED: "true"
+      CROSSREF_ENABLED: "true"
+      ARXIV_ENABLED: "true"
+      DATACITE_ENABLED: "true"
+      ZENODO_ENABLED: "true"
+      PAPERSONAR_RAW_DIR: ${{ runner.temp }}/papersonar-raw
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Check required secrets are present (names only, never values)
+        env:
+          REQUIRED_SECRETS: >-
+            SNOWFLAKE_ACCOUNT
+            SNOWFLAKE_USER
+            SNOWFLAKE_ROLE
+            SNOWFLAKE_WAREHOUSE
+            SNOWFLAKE_DATABASE
+            SNOWFLAKE_SCHEMA
+            SNOWFLAKE_PRIVATE_KEY
+            OPENALEX_API_KEY
+            CROSSREF_CONTACT_EMAIL
+        run: |
+          missing=""
+          for name in $REQUIRED_SECRETS; do
+            if [ -z "$(eval "echo \${$name:-}")" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "MISSING SECRETS (names only):$missing" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::Missing required secrets:$missing"
+            exit 1
+          fi
+          echo "All required secrets are present." >> "$GITHUB_STEP_SUMMARY"
+      - name: Fail-closed configuration validation (before any source API call)
+        env:
+          PAPERSONAR_TARGET: snowflake
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          CROSSREF_CONTACT_EMAIL: ${{ secrets.CROSSREF_CONTACT_EMAIL }}
+        run: papersonar validate-config --mode ingest
+      - name: Snowflake smoke test (connectivity + migrations + counts)
+        env:
+          PAPERSONAR_TARGET: snowflake
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          CROSSREF_CONTACT_EMAIL: ${{ secrets.CROSSREF_CONTACT_EMAIL }}
+        run: papersonar smoke-test
+      - name: Run pipeline (scheduled = sync only)
+        id: run
+        env:
+          PAPERSONAR_TARGET: snowflake
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+          OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+          CROSSREF_CONTACT_EMAIL: ${{ secrets.CROSSREF_CONTACT_EMAIL }}
+        run: |
+          MODE="sync"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            MODE="${{ inputs.mode }}"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_STEP_SUMMARY"
+          set +e
+          papersonar "$MODE"
+          EXIT_CODE=$?
+          set -e
+          echo "exit_code=$EXIT_CODE" >> "$GITHUB_STEP_SUMMARY"
+          case $EXIT_CODE in
+            0) echo "outcome=succeeded" >> "$GITHUB_STEP_SUMMARY" ;;
+            1) echo "outcome=partial" >> "$GITHUB_STEP_SUMMARY" ;;
+            *) echo "outcome=failed" >> "$GITHUB_STEP_SUMMARY" ;;
+          esac
+          exit $EXIT_CODE
+      - name: Final validation (quality gate)
+        if: always()
+        env:
+          PAPERSONAR_TARGET: snowflake
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+          SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+          SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+        run: papersonar quality
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## PaperSonar Phase 2 run"
+            echo ""
+            echo "- Trigger: ${{ github.event_name }}"
+            echo "- Mode: ${{ inputs.mode || 'sync (scheduled)' }}"
+            echo "- Distinguishes succeeded / partial / failed runs; per-source statuses are in the run step output and PROJECT_OPS.ETL_RUN."
+            echo "- Raw payloads are stored durably in the Snowflake internal stage PROJECT_OPS.RAW_STAGE (never only on the runner disk)."
+          } >> "$GITHUB_STEP_SUMMARY"

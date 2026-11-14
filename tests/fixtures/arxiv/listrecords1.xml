@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Element names follow the arXiv OAI-PMH arXiv metadata format (info.arxiv.org/help/oa).
+     Small sanitized fixture for contract tests; not a live capture. -->
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-11-14T00:00:00Z</responseDate>
+  <request verb="ListRecords" metadataPrefix="arXiv" from="2026-01-01">https://oaipmh.arxiv.org/oai</request>
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:arXiv.org:2401.00001</identifier>
+        <datestamp>2026-01-02T00:00:00Z</datestamp>
+      </header>
+      <metadata>
+        <arXiv xmlns="http://arxiv.org/OAI/arXiv/">
+          <id>2401.00001</id>
+          <created>2024-01-01</created>
+          <updated>2024-06-01</updated>
+          <title>Test preprint one</title>
+          <abstract>An abstract about testing.</abstract>
+          <authors>
+            <author>Ada Lovelace</author>
+            <author>Grace Hopper</author>
+          </authors>
+          <categories>cs.SE cs.PL</categories>
+          <doi>10.5555/arxiv-doi</doi>
+          <journal-ref>Softw. Pract. Exper.</journal-ref>
+          <license>https://arxiv.org/help/license</license>
+        </arXiv>
+      </metadata>
+    </record>
+    <record>
+      <header status="deleted">
+        <identifier>oai:arXiv.org:2401.00002</identifier>
+        <datestamp>2026-01-03T00:00:00Z</datestamp>
+      </header>
+    </record>
+    <resumptionToken expirationDate="2026-11-15T00:00:00Z">tok-page2</resumptionToken>
+  </ListRecords>
+</OAI-PMH>

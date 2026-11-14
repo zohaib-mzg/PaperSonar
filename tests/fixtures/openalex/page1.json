@@ -1,0 +1,51 @@
+{
+  "meta": {
+    "count": 3,
+    "next_cursor": "IlsxNzA0MDQ0ODAwMDAwMDAwL",
+    "per_page": 2
+  },
+  "results": [
+    {
+      "id": "https://openalex.org/W2102429193",
+      "doi": "https://doi.org/10.5555/test-one",
+      "display_name": "Test work one",
+      "publication_date": "2020-05-01",
+      "publication_year": 2020,
+      "type": "article",
+      "primary_location": {"source": {"id": "https://openalex.org/S123", "display_name": "Journal of Tests"}},
+      "open_access": {"is_oa": true, "oa_status": "gold"},
+      "cited_by_count": 12,
+      "referenced_works": ["https://openalex.org/W1", "https://openalex.org/W2"],
+      "primary_topic": {"id": "https://openalex.org/T10743", "display_name": "Software engineering"},
+      "topics": [
+        {"id": "https://openalex.org/T10743", "display_name": "Software engineering", "score": 0.9},
+        {"id": "https://openalex.org/T12423", "display_name": "Testing", "score": 0.4}
+      ],
+      "authorships": [
+        {
+          "author_position": "first",
+          "author": {"id": "https://openalex.org/A1", "display_name": "Ada Lovelace", "orcid": "https://orcid.org/0000-0002-0000-0000"},
+          "institutions": [{"id": "https://openalex.org/I1", "display_name": "Analytical Engines Ltd"}]
+        }
+      ],
+      "updated_date": "2025-01-02T00:00:00+00:00",
+      "language": "en",
+      "is_retracted": false
+    },
+    {
+      "id": "https://openalex.org/W3000000001",
+      "doi": null,
+      "display_name": "Test work two without DOI",
+      "publication_date": "2021-11-30",
+      "publication_year": 2021,
+      "type": "preprint",
+      "primary_location": {"source": {"id": "https://openalex.org/S999", "display_name": "arXiv"}},
+      "open_access": {"is_oa": true, "oa_status": "green"},
+      "cited_by_count": 0,
+      "referenced_works": [],
+      "primary_topic": null,
+      "topics": [],
+      "authorships": []
+    }
+  ]
+}
