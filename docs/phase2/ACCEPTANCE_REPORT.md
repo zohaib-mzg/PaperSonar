@@ -249,3 +249,39 @@ Added in the hardening step (uncommitted; awaiting approval):
 4. Live-only behaviors (unknown-member seeds, reporting views, join-based
    integrity checks, DataCite range syntax) are BLOCKED until a no-cost
    Snowflake account exists.
+
+---
+
+## 6. Current checkout audit update — 2026-11-15
+
+This update supersedes test totals and implementation claims above where they
+conflict with the current local `phase2` checkout at
+`5b45d21ccc21fe117a257b82519489f04ecf509f`. This checkout has an additional
+uncommitted Phase 2 focused-fix set. Source review found bulk Snowflake inserts,
+state/cursor fixes, and migration 005's numeric surrogate-key mapping work in
+the local tree. The surrogate-key changes are mock-tested only; the migration
+and evidence queries have not run against Snowflake.
+
+Current result for this checkout: `python -m ruff check src tests --no-cache`
+passed; `python -m pytest tests -p no:cacheprovider` passed **158 tests, 0
+failures** (including the new missing-surrogate quality-gate regression). The
+test command used a scratch `--basetemp` because the sandbox's default temp
+path was not writable. Do not reuse the 129-test total above as the result for
+the focused-fix tree. The locally reviewed ZIP patch also contained
+preliminary reports and an older repository audit; those were not treated as
+live evidence. See `SURROGATE_KEY_MIGRATION.md`,
+`PHASE2_DATA_DICTIONARY_ADDENDUM.md`, and `PHASE2_EVIDENCE_QUERIES.sql` for the
+current key design and exact read-only Snowflake evidence still required. The
+SQL migration itself has only been reviewed and mock-path exercised; no live
+Snowflake SQL parser or backfill has validated it.
+
+The checkout reports repository root, branch, and HEAD normally, but `git
+status` and `git diff --check` in this environment fail with Git's
+`operation must be run in a work tree` error. No commit, push, merge, or remote
+workflow dispatch was performed. Treat the local edits listed in the handoff
+as uncommitted; final index/worktree verification must be repeated in a working
+Git shell.
+
+Live Snowflake row counts, scale thresholds (100+ dimension records and
+10,000+ fact rows), workflow execution, and final submission PDFs remain
+**BLOCKED / unverified**. No Phase 3 implementation has been started.

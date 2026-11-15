@@ -178,18 +178,26 @@ class StateStore:
     def save_sync_state(self, state: SyncState) -> None:
         """Upsert the checkpoint row (no transaction wrapper - caller decides).
 
-        ``None`` fields mean "preserve the stored value" - a partial state can
-        never wipe the durable watermark. To clear a field explicitly, store an
-        empty string instead of ``None``.
+        ``None`` fields ordinarily mean "preserve the stored value", so a
+        partial state cannot wipe the durable watermark. Successful states
+        explicitly clear any saved cursor and previous error metadata.
         """
         values = {column: getattr(state, _snake(column)) for column in _SYNC_STATE_COLUMNS}
         update_columns = [
             column
             for column in _SYNC_STATE_COLUMNS
-            if column not in ("SOURCE_NAME", "STREAM_NAME") and values.get(column) is not None
+            if column not in ("SOURCE_NAME", "STREAM_NAME")
+            and (values.get(column) is not None or
+                 (state.status == "succeeded" and column in ("CURSOR_OR_TOKEN", "ERROR_CODE", "ERROR_SUMMARY")))
         ]
+        # A successful window must clear its previous cursor and error details;
+        # otherwise the next run resumes from a stale token and displays old failures.
         stamped = SyncState(**{**asdict(state), "updated_at": utc_now()})
-        row = [getattr(stamped, _snake(column)) for column in _SYNC_STATE_COLUMNS]
+        row = [
+            None if state.status == "succeeded" and column in
+            ("CURSOR_OR_TOKEN", "ERROR_CODE", "ERROR_SUMMARY")
+            else getattr(stamped, _snake(column)) for column in _SYNC_STATE_COLUMNS
+        ]
         self._warehouse.upsert_rows(
             "PROJECT_OPS.SOURCE_SYNC_STATE",
             ["SOURCE_NAME", "STREAM_NAME"],

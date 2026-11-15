@@ -160,6 +160,43 @@ class FakeWarehouse:
             table_obj.rows.append({c.upper(): value for c, value in zip(columns, row, strict=True)})
         return len(rows)
 
+    def ensure_surrogate_keys(self, dimension_name: str, business_keys: list[str] | tuple[str, ...]) -> dict[str, int]:
+        """Deterministic test implementation of the SQL surrogate-map contract."""
+        table = self.tables.setdefault(
+            "PROJECT_DW.DIMENSION_KEY_MAP",
+            Table(columns=["SURROGATE_KEY", "DIMENSION_NAME", "BUSINESS_KEY", "CREATED_AT"]),
+        )
+        result: dict[str, int] = {}
+        for business_key in sorted({str(key) for key in business_keys if key is not None}):
+            existing = next(
+                (row for row in table.rows
+                 if row.get("DIMENSION_NAME") == dimension_name and row.get("BUSINESS_KEY") == business_key),
+                None,
+            )
+            if existing is None:
+                next_value = max((int(row["SURROGATE_KEY"]) for row in table.rows), default=0) + 1
+                existing = {
+                    "SURROGATE_KEY": next_value,
+                    "DIMENSION_NAME": dimension_name,
+                    "BUSINESS_KEY": business_key,
+                    "CREATED_AT": None,
+                }
+                table.rows.append(existing)
+            result[business_key] = int(existing["SURROGATE_KEY"])
+        return result
+    def sync_surrogate_key_column(
+        self, dimension_name: str, table: str, business_column: str,
+        surrogate_column: str, business_keys: list[str] | tuple[str, ...],
+    ) -> None:
+        table_obj = self.tables.get(table.upper())
+        if table_obj is None:
+            return
+        all_keys = [row.get(business_column.upper()) for row in table_obj.rows]
+        mappings = self.ensure_surrogate_keys(dimension_name, [*all_keys, *business_keys])
+        for row in table_obj.rows:
+            business_key = row.get(business_column.upper())
+            if business_key is not None and row.get(surrogate_column.upper()) is None:
+                row[surrogate_column.upper()] = mappings.get(str(business_key))
     def execute_script(self, sql_text: str) -> None:
         from papersonar.warehouse.sqlsplit import split_sql_statements
 
@@ -225,6 +262,12 @@ def _parse_where(where_sql: str | None, params: list[Any]) -> list[tuple[str, st
     param_index = 0
     for part in parts:
         in_match = re.match(r"\s*([A-Za-z0-9_]+)\s+IN\s*\(([^)]*)\)\s*$", part.strip(), re.I)
+        null_match = re.match(r"\s*([A-Za-z0-9_]+)\s+IS\s+(NOT\s+)?NULL\s*$", part.strip(), re.I)
+        if null_match:
+            filters.append(
+                (null_match.group(1).upper(), "is_not_null" if null_match.group(2) else "is_null", None)
+            )
+            continue
         if in_match:
             in_values: list[Any] = []
             for item in in_match.group(2).split(","):
@@ -259,6 +302,10 @@ def _parse_where(where_sql: str | None, params: list[Any]) -> list[tuple[str, st
 
 
 def _cmp(left: Any, op: str, right: Any) -> bool:
+    if op == "is_null":
+        return left is None
+    if op == "is_not_null":
+        return left is not None
     if op == "=":
         return _eq(left, right)
     if op == "!=":

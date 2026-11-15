@@ -113,9 +113,65 @@ class TestFullPipelineMock:
         assert pipeline.count("PROJECT_DW.DIM_VENUE") >= 2
         assert pipeline.count("PROJECT_DW.BRIDGE_WORK_AUTHOR") >= 2
 
+        # Numeric warehouse surrogate keys are populated and distinct while
+        # the source/business keys remain available for lineage and MERGE keys.
+        for table, column in (
+            ("PROJECT_DW.DIM_WORK", "WORK_SK"),
+            ("PROJECT_DW.DIM_DATE", "DATE_SK"),
+            ("PROJECT_DW.DIM_TOPIC", "TOPIC_SK"),
+            ("PROJECT_DW.DIM_AUTHOR", "AUTHOR_SK"),
+            ("PROJECT_DW.DIM_INSTITUTION", "INSTITUTION_SK"),
+            ("PROJECT_DW.DIM_VENUE", "VENUE_SK"),
+            ("PROJECT_DW.DIM_WORK_TYPE", "WORK_TYPE_SK"),
+            ("PROJECT_DW.DIM_ACCESS_STATUS", "ACCESS_STATUS_SK"),
+        ):
+            values = [row[column] for row in pipeline.warehouse.tables[table].rows]
+            assert all(value is not None for value in values), table
+            assert len(values) == len(set(values)), table
+        for table, columns in (
+            (
+                "PROJECT_DW.FACT_PUBLICATION",
+                ("WORK_SK", "PUBLICATION_DATE_SK", "WORK_TYPE_SK", "VENUE_SK", "ACCESS_STATUS_SK"),
+            ),
+            ("PROJECT_DW.FACT_WORK_SNAPSHOT", ("WORK_SK", "SNAPSHOT_DATE_SK", "ACCESS_STATUS_SK")),
+            ("PROJECT_DW.BRIDGE_WORK_TOPIC", ("WORK_SK", "TOPIC_SK")),
+            ("PROJECT_DW.BRIDGE_WORK_AUTHOR", ("WORK_SK", "AUTHOR_SK")),
+            ("PROJECT_DW.BRIDGE_WORK_INSTITUTION", ("WORK_SK", "INSTITUTION_SK", "AUTHOR_SK")),
+        ):
+            assert all(
+                row[column] is not None
+                for row in pipeline.warehouse.tables[table].rows
+                for column in columns
+            ), table
+        citation_rows = pipeline.warehouse.tables["PROJECT_DW.FACT_CITATION"].rows
+        assert all(row["WORK_SK"] is not None for row in citation_rows)
+        assert all(
+            row["CITED_WORK_SK"] is not None
+            for row in citation_rows
+            if row.get("CITED_WORK_KEY")
+        )
+        mappings = pipeline.warehouse.tables["PROJECT_DW.DIMENSION_KEY_MAP"].rows
+        map_keys = [(row["DIMENSION_NAME"], row["BUSINESS_KEY"]) for row in mappings]
+        assert len(map_keys) == len(set(map_keys))
         result = pipeline.gate()
         assert result.passed is True
         assert result.summary == "PASS"
+
+    def test_quality_gate_fails_for_missing_dimension_surrogate(self, tmp_path):
+        pipeline = PipelineHarness(tmp_path)
+        pipeline.ingest_adapter_page(
+            OpenAlexAdapter,
+            _fixture_session("openalex", "page1.json"),
+            "openalex",
+            tmp_path,
+        )
+        pipeline.warehouse.tables["PROJECT_DW.DIM_TOPIC"].rows[0]["TOPIC_SK"] = None
+
+        result = pipeline.gate()
+
+        assert result.passed is False
+        missing_check = next(check for check in result.checks if check["name"] == "dim_topic_missing_sk")
+        assert missing_check["value"] == 1
 
     def test_replay_is_idempotent(self, tmp_path):
         pipeline = PipelineHarness(tmp_path)

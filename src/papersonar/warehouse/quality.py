@@ -98,6 +98,50 @@ class QualityGate:
             }
         )
 
+        surrogate_checks = (
+            ("dim_work_missing_sk", "PROJECT_DW.DIM_WORK", "WORK_SK"),
+            ("dim_date_missing_sk", "PROJECT_DW.DIM_DATE", "DATE_SK"),
+            ("dim_topic_missing_sk", "PROJECT_DW.DIM_TOPIC", "TOPIC_SK"),
+            ("dim_venue_missing_sk", "PROJECT_DW.DIM_VENUE", "VENUE_SK"),
+            ("dim_work_type_missing_sk", "PROJECT_DW.DIM_WORK_TYPE", "WORK_TYPE_SK"),
+            ("dim_access_status_missing_sk", "PROJECT_DW.DIM_ACCESS_STATUS", "ACCESS_STATUS_SK"),
+            ("dim_author_missing_sk", "PROJECT_DW.DIM_AUTHOR", "AUTHOR_SK"),
+            ("dim_institution_missing_sk", "PROJECT_DW.DIM_INSTITUTION", "INSTITUTION_SK"),
+            ("publication_work_missing_sk", "PROJECT_DW.FACT_PUBLICATION", "WORK_SK"),
+            ("publication_date_missing_sk", "PROJECT_DW.FACT_PUBLICATION", "PUBLICATION_DATE_SK"),
+            ("publication_type_missing_sk", "PROJECT_DW.FACT_PUBLICATION", "WORK_TYPE_SK"),
+            ("publication_venue_missing_sk", "PROJECT_DW.FACT_PUBLICATION", "VENUE_SK"),
+            ("publication_access_missing_sk", "PROJECT_DW.FACT_PUBLICATION", "ACCESS_STATUS_SK"),
+            ("snapshot_work_missing_sk", "PROJECT_DW.FACT_WORK_SNAPSHOT", "WORK_SK"),
+            ("snapshot_date_missing_sk", "PROJECT_DW.FACT_WORK_SNAPSHOT", "SNAPSHOT_DATE_SK"),
+            ("snapshot_access_missing_sk", "PROJECT_DW.FACT_WORK_SNAPSHOT", "ACCESS_STATUS_SK"),
+            ("citation_citing_missing_sk", "PROJECT_DW.FACT_CITATION", "WORK_SK"),
+            ("topic_bridge_work_missing_sk", "PROJECT_DW.BRIDGE_WORK_TOPIC", "WORK_SK"),
+            ("topic_bridge_topic_missing_sk", "PROJECT_DW.BRIDGE_WORK_TOPIC", "TOPIC_SK"),
+            ("author_bridge_work_missing_sk", "PROJECT_DW.BRIDGE_WORK_AUTHOR", "WORK_SK"),
+            ("author_bridge_author_missing_sk", "PROJECT_DW.BRIDGE_WORK_AUTHOR", "AUTHOR_SK"),
+            ("institution_bridge_work_missing_sk", "PROJECT_DW.BRIDGE_WORK_INSTITUTION", "WORK_SK"),
+            ("institution_bridge_institution_missing_sk", "PROJECT_DW.BRIDGE_WORK_INSTITUTION", "INSTITUTION_SK"),
+            ("institution_bridge_author_missing_sk", "PROJECT_DW.BRIDGE_WORK_INSTITUTION", "AUTHOR_SK"),
+        )
+        for name, table, column in surrogate_checks:
+            sql = f"SELECT COUNT(*) FROM {table} WHERE {column} IS NULL"
+            value = self._count(sql)
+            checks_out.append({"name": name, "sql": sql, "value": value, "passed": value == 0, "threshold": 0})
+        cited_sql = (
+            "SELECT COUNT(*) FROM PROJECT_DW.FACT_CITATION "
+            "WHERE CITED_WORK_KEY != '' AND CITED_WORK_SK IS NULL"
+        )
+        cited_missing = self._count(cited_sql)
+        checks_out.append(
+            {
+                "name": "citation_resolved_target_missing_sk",
+                "sql": cited_sql,
+                "value": cited_missing,
+                "passed": cited_missing == 0,
+                "threshold": 0,
+            }
+        )
         passed = all(check["passed"] for check in checks_out)
         summary = "PASS" if passed else "FAIL"
         return QualityGateResult(passed=passed, checks=checks_out, quarantine_ratio=ratio, summary=summary)
