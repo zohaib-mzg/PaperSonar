@@ -291,6 +291,23 @@ class Orchestrator:
                 loader.load_facts(resolved, run_id)
                 loader.refresh_citation_resolution()
                 raw_store.mark_complete(batch.batch_id)
+                # Save the NEXT cursor only after this page's warehouse writes
+                # and raw completion have succeeded. A killed/limited run can
+                # now restart at the next page rather than page 1.
+                if parsed.next_cursor is not None and not parsed.pages_complete:
+                    state.save_sync_state_transactional(
+                        SyncState(
+                            source_name=adapter.name,
+                            stream_name=window.stream_name,
+                            sync_mode=mode,
+                            window_start=window.window_start,
+                            window_end=window.window_end,
+                            cursor_or_token=parsed.next_cursor,
+                            last_run_id=run_id,
+                            status="running",
+                            config_checksum=self._config_checksum(),
+                        )
+                    )
                 pages += 1
                 window_staging += len(outcome.accepted)
                 counters["raw_records"] += batch.records_seen or 0
@@ -349,7 +366,8 @@ class Orchestrator:
                     status="failed",
                     error_code=type(exc).__name__,
                     error_summary=str(exc)[:500],
-                    cursor_or_token=base.cursor_or_token,  # keep resume point
+                    cursor_or_token=(state.get_sync_state(source_name, stream_name) or base).cursor_or_token,
+                    # A failure must retain the most recently committed page cursor.
                     last_successful_watermark=base.last_successful_watermark,
                 )
             )

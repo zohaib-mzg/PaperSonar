@@ -48,6 +48,17 @@ class Warehouse(Protocol):
         """Append-only batch insert (e.g. immutable raw/manifest evidence)."""
         ...
 
+    def ensure_surrogate_keys(self, dimension_name: str, business_keys: Sequence[str]) -> dict[str, int]:
+        """Return stable numeric keys for a dimension's business keys."""
+        ...
+
+    def sync_surrogate_key_column(
+        self, dimension_name: str, table: str, business_column: str,
+        surrogate_column: str, business_keys: Sequence[str],
+    ) -> None:
+        """Populate a table's numeric key from its durable business-key map."""
+        ...
+
     def execute_script(self, sql_text: str) -> None:
         """Execute a multi-statement SQL script (migrations)."""
         ...
@@ -211,32 +222,92 @@ class SnowflakeAdapter:
             cursor.close()
 
     def insert_rows(self, table: str, columns: Sequence[str], rows: Sequence[Sequence[Any]]) -> int:
+        """Insert batches using one INSERT ... SELECT with UNION ALL per chunk.
+
+        PARSE_JSON is an expression and cannot appear directly inside a VALUES
+        clause. Snowflake's connector executemany cannot bulk-bind an INSERT ...
+        SELECT, so we build a bounded parameterized SELECT-per-row UNION ALL.
+        A rejected *compilation* may be retried with single-row statements;
+        execution/network errors are never replayed, since commit is unknown.
+        """
         if not rows:
             return 0
-        # Columns holding dict/list values are sent as JSON text and parsed to VARIANT.
         json_cols = {i for i in range(len(columns)) if any(_is_json_value(r[i]) for r in rows)}
-        placeholders = ", ".join(
-            "PARSE_JSON(%s)" if i in json_cols else "%s" for i in range(len(columns))
-        )
-        col_list = ", ".join(columns)
-        # PARSE_JSON is not allowed inside VALUES, so this uses INSERT ... SELECT.
-        sql = f"INSERT INTO {table} ({col_list}) SELECT {placeholders}"
-        prepared = [
-            [
-                json.dumps(v, default=str) if i in json_cols and v is not None else v
-                for i, v in enumerate(r)
-            ]
-            for r in rows
-        ]
+        expressions = ["PARSE_JSON(%s)" if i in json_cols else "%s" for i in range(len(columns))]
+        single_sql = f"INSERT INTO {table} ({', '.join(columns)}) SELECT {', '.join(expressions)}"
+        inserted = 0
         cursor = self._conn.cursor()
         try:
-            # executemany() only supports INSERT ... VALUES, so run one statement per row.
-            for params in prepared:
-                cursor.execute(sql, params)
-            return len(rows)
+            for chunk in _chunk(rows, _INSERT_CHUNK):
+                prepared = [
+                    [json.dumps(value, default=str) if i in json_cols and value is not None else value
+                     for i, value in enumerate(row)]
+                    for row in chunk
+                ]
+                if len(prepared) == 1:
+                    cursor.execute(single_sql, prepared[0])
+                else:
+                    source_sql = "\nUNION ALL\n".join(
+                        "SELECT " + ", ".join(expressions) for _ in prepared
+                    )
+                    bulk_sql = f"INSERT INTO {table} ({', '.join(columns)})\n{source_sql}"
+                    try:
+                        cursor.execute(bulk_sql, [value for row in prepared for value in row])
+                    except Exception as exc:
+                        # SQL compilation happens before any statement can insert a
+                        # row. Do not fall back after an ambiguous transport/server
+                        # error; retrying that case can duplicate append-only data.
+                        if not _is_sql_compilation_error(exc):
+                            raise
+                        logger.warning("Multi-row INSERT rejected at SQL compilation; using per-row fallback")
+                        for row in prepared:
+                            cursor.execute(single_sql, row)
+                inserted += len(chunk)
+            return inserted
         finally:
             cursor.close()
 
+    def ensure_surrogate_keys(self, dimension_name: str, business_keys: Sequence[str]) -> dict[str, int]:
+        """Create missing business-key mappings in one batch, then read the stable keys."""
+        keys = sorted({str(key) for key in business_keys if key is not None})
+        if not keys:
+            return {}
+        result: dict[str, int] = {}
+        for chunk in _chunk(keys, _INSERT_CHUNK):
+            value_rows = ", ".join("(%s)" for _ in chunk)
+            insert_sql = (
+                "INSERT INTO PROJECT_DW.DIMENSION_KEY_MAP (DIMENSION_NAME, BUSINESS_KEY) "
+                f"SELECT %s, v.BUSINESS_KEY FROM VALUES {value_rows} AS v(BUSINESS_KEY) "
+                "WHERE NOT EXISTS (SELECT 1 FROM PROJECT_DW.DIMENSION_KEY_MAP m "
+                "WHERE m.DIMENSION_NAME = %s AND m.BUSINESS_KEY = v.BUSINESS_KEY)"
+            )
+            self.execute(insert_sql, [dimension_name, *chunk, dimension_name])
+            marks = ", ".join("%s" for _ in chunk)
+            rows = self.execute(
+                "SELECT BUSINESS_KEY, SURROGATE_KEY FROM PROJECT_DW.DIMENSION_KEY_MAP "
+                f"WHERE DIMENSION_NAME = %s AND BUSINESS_KEY IN ({marks})",
+                [dimension_name, *chunk],
+            )
+            result.update({str(key): int(surrogate) for key, surrogate in rows})
+        missing = set(keys) - set(result)
+        if missing:
+            raise RuntimeError(
+                f"Surrogate mapping missing for dimension {dimension_name}: {len(missing)} business keys"
+            )
+        return result
+    def sync_surrogate_key_column(
+        self, dimension_name: str, table: str, business_column: str,
+        surrogate_column: str, business_keys: Sequence[str],
+    ) -> None:
+        """Ensure mappings exist, then fill null surrogate references with SQL."""
+        self.ensure_surrogate_keys(dimension_name, business_keys)
+        self.execute(
+            f"UPDATE {table} AS d SET {surrogate_column} = m.SURROGATE_KEY "
+            "FROM PROJECT_DW.DIMENSION_KEY_MAP AS m "
+            f"WHERE m.DIMENSION_NAME = %s AND m.BUSINESS_KEY = TO_VARCHAR(d.{business_column}) "
+            f"AND d.{surrogate_column} IS NULL",
+            [dimension_name],
+        )
     # -- scripts and raw storage --------------------------------------------
 
     def execute_script(self, sql_text: str) -> None:
@@ -277,6 +348,13 @@ class SnowflakeAdapter:
 
 
 _MERGE_CHUNK = 500
+_INSERT_CHUNK = 50  # bound statement size and bind parameter count
+
+
+def _is_sql_compilation_error(exc: Exception) -> bool:
+    """Only errors known to originate in SQL compilation qualify for fallback."""
+    return getattr(exc, "errno", None) == 1003 and getattr(exc, "sqlstate", None) == "42000"
+
 
 
 def _stage_ref(stage_path: str) -> str:

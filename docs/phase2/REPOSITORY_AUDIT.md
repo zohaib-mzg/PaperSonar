@@ -1,5 +1,13 @@
 # PaperSonar Phase 2 repository audit
 
+> **Superseded baseline:** This file records the repository before Phase 2 code
+> was implemented and must not be read as the current tree description. The
+> current branch is `phase2` at `5b45d21ccc21fe117a257b82519489f04ecf509f`;
+> it contains the Python package, five source adapters, Snowflake migrations,
+> tests, and workflow. The current focused-fix checkout also includes
+> uncommitted local changes. Live Snowflake counts and migration execution are
+> still unverified. See [the current acceptance report](ACCEPTANCE_REPORT.md).
+
 **Audit date:** 2026-11-14
 **Audit commit:** `e9f6420` on branch `phase2` (parent: `6b6ac3f` = `origin/main` tip after PR #1 merge).
 **Checkpoint policy:** Phase 1 evidence is preserved on `main` and `phase1`. This `phase2` branch is the working checkpoint; no destructive rewrite of Phase 1 artifacts is planned.

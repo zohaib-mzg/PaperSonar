@@ -72,12 +72,31 @@ free-first analysis: [platform decision](docs/decisions/002-free-first-warehouse
 
 ## Warehouse model direction
 
-The existing publication-centered dimensional design remains useful as a first analytics mart, but cannot by itself represent datasets, software, preprint versions and cross-source identities. Phase 1 must update the logical design around `research_output`, `source_record`, `output_version`, `output_relationship`, `output_observation`, creator/topic/institution bridges, `etl_run` and per-source sync state before Phase 2 begins. The detailed target is in [architecture notes](docs/architecture/README.md) and the [data dictionary v2](docs/submissions/phase-1/v2/data-dictionary-v2.xlsx).
+The current Phase 2 mart implements publication-centered canonical works,
+source crosswalks, observations, citations and creator/topic/institution
+bridges. It does not yet model datasets and software as first-class outputs or
+version relationships. The broader logical target is documented in
+[architecture notes](docs/architecture/README.md) and the
+[data dictionary v2](docs/submissions/phase-1/v2/data-dictionary-v2.xlsx); the
+Phase 2 physical surrogate-key addendum is
+[here](docs/phase2/PHASE2_DATA_DICTIONARY_ADDENDUM.md).
+
+## Phase 2 implementation status
+
+The `phase2` branch contains the Phase 2 ingestion and warehouse implementation,
+including five source adapters, Snowflake migrations/loaders, orchestration,
+mocked tests, and an additive numeric surrogate-key migration. This is not live
+acceptance: Snowflake migration/backfill, read-only production evidence, GitHub
+Actions execution, and course-scale counts remain **BLOCKED / unverified** until
+the account owner provides and authorizes the no-cost Snowflake setup. See the
+[acceptance report](docs/phase2/ACCEPTANCE_REPORT.md),
+[surrogate-key migration notes](docs/phase2/SURROGATE_KEY_MIGRATION.md), and
+[read-only evidence queries](docs/phase2/PHASE2_EVIDENCE_QUERIES.sql).
 
 ## Course alignment
 
 - **Phase 1 (30%):** proposal, business requirements, 10+ analytical questions, business processes, fact types and grains, dimensions/hierarchies, natural/surrogate keys, conceptual/logical/physical model, diagram and data dictionary.
-- **Phase 2 (40%, not started):** source ingestion, `project_staging`, `project_dw`, `project_reporting`, cleaning/transformation, surrogate-key loads, at least 100+ dimension records and 10,000+ fact records, quality reports.
+- **Phase 2 (40%, implementation in progress; live acceptance blocked):** source ingestion, `project_staging`, `project_dw`, `project_reporting`, cleaning/transformation, surrogate-key loads, at least 100+ dimension records and 10,000+ fact records, quality reports.
 - **Phase 3 (30%, not started):** analytical SQL, `ROLLUP`, `CUBE`, reporting views, before/after `EXPLAIN ANALYZE`, indexes, three-page Power BI dashboard equivalent, screenshots, business insight report and final presentation.
 
 The lab's retail sales examples are not copied into PaperSonar. Implement the same DWBI techniques using research-output measures. Full traceability is in [course requirements matrix](docs/requirements/course-requirements-matrix.md).
@@ -95,6 +114,8 @@ The lab's retail sales examples are not copied into PaperSonar. Implement the sa
 - `docs/phase2/SOURCE_CAPABILITY_MATRIX.md` — verified API facts and per-source implementation decisions.
 - `docs/phase2/RUNBOOK.md` — operator runbook: Snowflake setup, secrets, commands, recovery, troubleshooting.
 - `docs/phase2/ACCEPTANCE_REPORT.md` — requirement-to-evidence matrix (PASS / PASS-MOCK / BLOCKED).
+- `docs/phase2/PHASE2_DATA_DICTIONARY_ADDENDUM.md` — physical Phase 2 surrogate-key columns.
+- `docs/phase2/PHASE2_EVIDENCE_QUERIES.sql` — read-only live acceptance evidence queries.
 - `src/papersonar/` — Phase 2 pipeline implementation (`papersonar` CLI, five adapters, Snowflake warehouse layer).
 - `config/corpus.example.json` — non-runnable source/corpus design contract.
 - `database/schema/001_initial_schema.sql` — original publication-centered proposed schema; not a Phase 2 implementation and not sufficient alone for all five sources.

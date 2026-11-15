@@ -22,7 +22,7 @@ SNOWFLAKE_ENV = {
     "SNOWFLAKE_WAREHOUSE": "PAPERSONAR_WH",
     "SNOWFLAKE_DATABASE": "PAPERSONAR",
     "SNOWFLAKE_SCHEMA": "INGEST",
-    "SNOWFLAKE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----",
+    "SNOWFLAKE_PRIVATE_KEY": "TEST_PRIVATE_KEY_PLACEHOLDER",
 }
 
 
@@ -106,7 +106,7 @@ class TestOrchestrator:
         assert state.last_successful_watermark == f"{__import__('datetime').date.today().year}-12-31"
         # Migrations applied and warehouse populated (001, 002, 003)
         assert warehouse.count("PROJECT_DW.DIM_WORK") == 2
-        assert warehouse.count("PROJECT_OPS.SCHEMA_MIGRATION") == 4
+        assert warehouse.count("PROJECT_OPS.SCHEMA_MIGRATION") == 5
 
     def test_source_failure_marks_run_partial_and_keeps_watermark(self, tmp_path, monkeypatch):
         patch_build_adapters(monkeypatch, tmp_path, failing=True)
@@ -241,3 +241,48 @@ def _state_with_cursor(source: str, stream: str, cursor: str):
     from papersonar.warehouse.state_store import SyncState
 
     return SyncState(source_name=source, stream_name=stream, cursor_or_token=cursor, status="running")
+
+
+def test_max_pages_retries_from_next_completed_page(tmp_path, monkeypatch):
+    """A failed/limited first run resumes from the NEXT page, not page one."""
+    from dataclasses import replace
+
+    from papersonar.sources.openalex import OpenAlexAdapter
+    from tests.helpers import fixture_bytes
+
+    settings = settings_for(_enabled_only("openalex"))
+    source = replace(settings.sources["openalex"], max_pages=1)
+    settings = replace(settings, sources={**settings.sources, "openalex": source})
+    warehouse = FakeWarehouse()
+    first_page = fixture_bytes("openalex", "page1.json")
+    last_page = b'{"meta":{"next_cursor":null},"results":[]}'
+    observed = []
+    call = [0]
+
+    def build(self, name):
+        call[0] += 1
+        response = FakeResponse(content=first_page if call[0] == 1 else last_page)
+        session = FakeSession(response)
+        adapter, _, _ = make_adapter(OpenAlexAdapter, source, session, tmp_path)
+        original_fetch = adapter.fetch_page
+
+        def record(window, cursor):
+            observed.append(cursor)
+            return original_fetch(window, cursor)
+
+        adapter.fetch_page = record
+        return adapter
+
+    monkeypatch.setattr(Orchestrator, "_build_adapter", build)
+    first = Orchestrator(settings, warehouse=warehouse).run("sync")
+    assert first.status == "failed"
+    year = __import__("datetime").date.today().year
+    saved = StateStore(warehouse).get_sync_state("openalex", f"year:{year}")
+    assert saved.cursor_or_token == "IlsxNzA0MDQ0ODAwMDAwMDAwL"
+    assert saved.last_successful_watermark is None
+    second = Orchestrator(settings, warehouse=warehouse).run("sync")
+    assert second.status == "succeeded"
+    assert observed == [None, "IlsxNzA0MDQ0ODAwMDAwMDAwL"]
+    saved = StateStore(warehouse).get_sync_state("openalex", f"year:{year}")
+    assert saved.cursor_or_token is None
+    assert saved.error_summary is None

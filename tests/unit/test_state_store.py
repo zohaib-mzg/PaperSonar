@@ -150,3 +150,24 @@ class TestQuarantine:
         row = warehouse.tables["PROJECT_STAGING.STG_QUARANTINE"].rows[0]
         assert row["LAST_SEEN_AT"] >= row["FIRST_SEEN_AT"]
         assert row["RESOLUTION_STATUS"] == "open"
+
+
+def test_successful_checkpoint_clears_stale_errors_and_cursor():
+    from papersonar.warehouse.state_store import SyncState
+
+    warehouse = FakeWarehouse()
+    state_store = StateStore(warehouse)
+    state_store.save_sync_state(
+        SyncState(source_name="openalex", stream_name="year:2026", status="failed",
+                  cursor_or_token="old-cursor", error_code="PermanentError",
+                  error_summary="previous failure")
+    )
+    state_store.save_sync_state(
+        SyncState(source_name="openalex", stream_name="year:2026", status="succeeded",
+                  last_successful_watermark="2026-12-31")
+    )
+    result = state_store.get_sync_state("openalex", "year:2026")
+    assert result.status == "succeeded"
+    assert result.cursor_or_token is None
+    assert result.error_code is None
+    assert result.error_summary is None

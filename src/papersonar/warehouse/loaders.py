@@ -103,6 +103,9 @@ class WarehouseLoader:
                 list(_CROSSWALK_COLUMNS),
                 [[row[column] for column in _CROSSWALK_COLUMNS] for row in outcome.crosswalk_rows],
             )
+            self._sync_surrogate(
+                "WORK", "PROJECT_DW.WORK_SOURCE_XW", "WORK_KEY", "WORK_SK", outcome.crosswalk_rows
+            )
         if outcome.canonical_rows:
             loaded += self._warehouse.upsert_rows(
                 "PROJECT_DW.DIM_WORK",
@@ -110,8 +113,10 @@ class WarehouseLoader:
                 list(_DIM_WORK_COLUMNS),
                 [[row[column] for column in _DIM_WORK_COLUMNS] for row in outcome.canonical_rows],
             )
+            self._sync_surrogate(
+                "WORK", "PROJECT_DW.DIM_WORK", "WORK_KEY", "WORK_SK", outcome.canonical_rows
+            )
         return loaded
-
     # -- dimensions and bridges ----------------------------------------------
 
     def load_dimensions(self, resolved_rows: list[StagingRow]) -> int:
@@ -195,18 +200,125 @@ class WarehouseLoader:
                 ["ACCESS_STATUS_KEY", "ACCESS_STATUS_NAME"],
                 [[r["ACCESS_STATUS_KEY"], r["ACCESS_STATUS_NAME"]] for r in access_rows],
             )
+        self._sync_surrogate("TOPIC", "PROJECT_DW.DIM_TOPIC", "TOPIC_KEY", "TOPIC_SK", topic_rows)
+        self._sync_surrogate("AUTHOR", "PROJECT_DW.DIM_AUTHOR", "AUTHOR_KEY", "AUTHOR_SK", author_rows)
+        self._sync_surrogate(
+            "INSTITUTION", "PROJECT_DW.DIM_INSTITUTION", "INSTITUTION_KEY", "INSTITUTION_SK", institution_rows
+        )
+        self._sync_surrogate("VENUE", "PROJECT_DW.DIM_VENUE", "VENUE_KEY", "VENUE_SK", venue_rows)
+        self._sync_surrogate("WORK_TYPE", "PROJECT_DW.DIM_WORK_TYPE", "WORK_TYPE_KEY", "WORK_TYPE_SK", type_rows)
+        self._sync_surrogate(
+            "ACCESS_STATUS", "PROJECT_DW.DIM_ACCESS_STATUS", "ACCESS_STATUS_KEY", "ACCESS_STATUS_SK", access_rows
+        )
+        self._sync_surrogate("WORK", "PROJECT_DW.BRIDGE_WORK_TOPIC", "WORK_KEY", "WORK_SK", topic_bridge)
+        self._sync_surrogate("TOPIC", "PROJECT_DW.BRIDGE_WORK_TOPIC", "TOPIC_KEY", "TOPIC_SK", topic_bridge)
+        self._sync_surrogate("WORK", "PROJECT_DW.BRIDGE_WORK_AUTHOR", "WORK_KEY", "WORK_SK", author_bridge)
+        self._sync_surrogate("AUTHOR", "PROJECT_DW.BRIDGE_WORK_AUTHOR", "AUTHOR_KEY", "AUTHOR_SK", author_bridge)
+        self._sync_surrogate("WORK", "PROJECT_DW.BRIDGE_WORK_INSTITUTION", "WORK_KEY", "WORK_SK", institution_bridge)
+        self._sync_surrogate(
+            "INSTITUTION", "PROJECT_DW.BRIDGE_WORK_INSTITUTION", "INSTITUTION_KEY", "INSTITUTION_SK",
+            institution_bridge,
+        )
+        self._sync_surrogate(
+            "AUTHOR", "PROJECT_DW.BRIDGE_WORK_INSTITUTION", "AUTHOR_KEY", "AUTHOR_SK", institution_bridge
+        )
+        self._load_date_dimensions([row.publication_date for row in resolved_rows])
         return loaded
 
+    def _sync_surrogate(
+        self, dimension: str, table: str, business_column: str, surrogate_column: str,
+        rows: list[dict[str, Any]],
+    ) -> None:
+        keys = [str(row[business_column]) for row in rows if row.get(business_column) is not None]
+        self._warehouse.sync_surrogate_key_column(
+            dimension, table, business_column, surrogate_column, keys
+        )
+
+    def _load_date_dimensions(self, values: list[Any]) -> None:
+        from datetime import date
+
+        unique_dates: dict[int, date] = {}
+        for value in values:
+            parsed = None
+            if isinstance(value, date):
+                parsed = value
+            elif isinstance(value, str) and len(value) == 10:
+                try:
+                    parsed = date.fromisoformat(value)
+                except ValueError:
+                    parsed = None
+            if parsed is not None:
+                unique_dates[int(parsed.strftime("%Y%m%d"))] = parsed
+        rows = [[0, None, None, None, None, "Unknown", None, None, False]]
+        for key, full_date in sorted(unique_dates.items()):
+            rows.append([
+                key, full_date, full_date.year, (full_date.month - 1) // 3 + 1, full_date.month,
+                full_date.strftime("%B"), full_date.day, full_date.isoweekday(), full_date.weekday() >= 5,
+            ])
+        self._warehouse.upsert_rows(
+            "PROJECT_DW.DIM_DATE", ["DATE_KEY"],
+            ["DATE_KEY", "FULL_DATE", "YEAR_NUMBER", "QUARTER", "MONTH_NUMBER",
+             "MONTH_NAME", "DAY_OF_MONTH", "DAY_OF_WEEK", "IS_WEEKEND"], rows,
+        )
+        self._sync_surrogate(
+            "DATE", "PROJECT_DW.DIM_DATE", "DATE_KEY", "DATE_SK",
+            [{"DATE_KEY": row[0]} for row in rows],
+        )
     # -- facts ---------------------------------------------------------------
 
     def load_facts(self, outcome: CanonicalOutcome, run_id: str) -> int:
         loaded = 0
         now = utc_now()
+        self._load_date_dimensions([now.date().isoformat()])
         loaded += self._load_fact_publication(outcome.canonical_rows, now)
         loaded += self._load_fact_snapshot(outcome.canonical_rows, run_id, now)
         loaded += self._load_fact_citation(outcome.resolved_rows, now)
+        self._sync_fact_surrogates(outcome, now)
         return loaded
 
+    def _sync_fact_surrogates(self, outcome: CanonicalOutcome, now: datetime) -> None:
+        canonical = outcome.canonical_rows
+        work_rows = [{"WORK_KEY": row["WORK_KEY"]} for row in canonical]
+        self._sync_surrogate("WORK", "PROJECT_DW.FACT_PUBLICATION", "WORK_KEY", "WORK_SK", work_rows)
+        self._sync_surrogate("WORK", "PROJECT_DW.FACT_WORK_SNAPSHOT", "WORK_KEY", "WORK_SK", work_rows)
+        self._sync_surrogate(
+            "DATE", "PROJECT_DW.FACT_PUBLICATION", "PUBLICATION_DATE_KEY", "PUBLICATION_DATE_SK",
+            [{"PUBLICATION_DATE_KEY": _publication_date_key(row.get("PUBLICATION_DATE"))} for row in canonical],
+        )
+        self._sync_surrogate(
+            "DATE", "PROJECT_DW.FACT_WORK_SNAPSHOT", "SNAPSHOT_DATE_KEY", "SNAPSHOT_DATE_SK",
+            [{"SNAPSHOT_DATE_KEY": int(now.strftime("%Y%m%d"))}],
+        )
+        self._sync_surrogate(
+            "WORK_TYPE", "PROJECT_DW.FACT_PUBLICATION", "WORK_TYPE_KEY", "WORK_TYPE_SK",
+            [{"WORK_TYPE_KEY": _type_key(row.get("WORK_TYPE"))} for row in canonical],
+        )
+        self._sync_surrogate(
+            "VENUE", "PROJECT_DW.FACT_PUBLICATION", "VENUE_KEY", "VENUE_SK",
+            [{"VENUE_KEY": _venue_key(row.get("SOURCE_PRIORITY"), row.get("VENUE_NAME"))} for row in canonical],
+        )
+        status_rows = [{"ACCESS_STATUS_KEY": _access_key(row.get("OA_STATUS"))} for row in canonical]
+        self._sync_surrogate(
+            "ACCESS_STATUS", "PROJECT_DW.FACT_PUBLICATION", "ACCESS_STATUS_KEY", "ACCESS_STATUS_SK", status_rows
+        )
+        self._sync_surrogate(
+            "ACCESS_STATUS", "PROJECT_DW.FACT_WORK_SNAPSHOT", "ACCESS_STATUS_KEY", "ACCESS_STATUS_SK", status_rows
+        )
+        work_keys = [self._resolver.work_key_for(row) for row in outcome.resolved_rows]
+        self._sync_surrogate(
+            "WORK", "PROJECT_DW.FACT_CITATION", "WORK_KEY", "WORK_SK", [{"WORK_KEY": key} for key in work_keys]
+        )
+        from papersonar.identifiers import normalize_doi
+        cited_rows = []
+        for row in outcome.resolved_rows:
+            for entry in row.referenced_works or []:
+                if isinstance(entry, dict) and entry.get("kind") == "doi" and entry.get("value"):
+                    cited = self._resolver.lookup_work_key_by_doi(normalize_doi(str(entry["value"])) or "")
+                    if cited:
+                        cited_rows.append({"CITED_WORK_KEY": cited})
+        self._sync_surrogate(
+            "WORK", "PROJECT_DW.FACT_CITATION", "CITED_WORK_KEY", "CITED_WORK_SK", cited_rows
+        )
     def _load_fact_publication(self, canonical_rows: list[dict[str, Any]], now: datetime) -> int:
         if not canonical_rows:
             return 0
@@ -218,6 +330,7 @@ class WarehouseLoader:
                     canonical["WORK_KEY"],
                     canonical.get("DOI_NORMALIZED"),
                     canonical.get("PUBLICATION_DATE"),
+                    _publication_date_key(canonical.get("PUBLICATION_DATE")),
                     canonical.get("PUBLICATION_YEAR"),
                     _type_key(canonical.get("WORK_TYPE")),
                     _venue_key(source, canonical.get("VENUE_NAME")),
@@ -235,6 +348,7 @@ class WarehouseLoader:
                 "WORK_KEY",
                 "DOI_NORMALIZED",
                 "PUBLICATION_DATE",
+                "PUBLICATION_DATE_KEY",
                 "PUBLICATION_YEAR",
                 "WORK_TYPE_KEY",
                 "VENUE_KEY",
@@ -258,6 +372,7 @@ class WarehouseLoader:
                 canonical.get("CITED_BY_COUNT"),
                 canonical.get("OA_IS_OA"),
                 canonical.get("OA_STATUS"),
+                _access_key(canonical.get("OA_STATUS")),
                 run_id,
             ]
             for canonical in canonical_rows
@@ -265,7 +380,7 @@ class WarehouseLoader:
         return self._warehouse.upsert_rows(
             "PROJECT_DW.FACT_WORK_SNAPSHOT",
             ["WORK_KEY", "SNAPSHOT_DATE_KEY"],
-            ["WORK_KEY", "SNAPSHOT_DATE_KEY", "CITED_BY_COUNT", "OA_IS_OA", "OA_STATUS", "RUN_ID"],
+            ["WORK_KEY", "SNAPSHOT_DATE_KEY", "CITED_BY_COUNT", "OA_IS_OA", "OA_STATUS", "ACCESS_STATUS_KEY", "RUN_ID"],
             rows,
         )
 
@@ -327,6 +442,9 @@ class WarehouseLoader:
                 [[work_key, resolved, cited_doi, provider, source, now]],
                 update_columns=["CITED_WORK_KEY"],
             )
+            self._warehouse.sync_surrogate_key_column(
+                "WORK", "PROJECT_DW.FACT_CITATION", "CITED_WORK_KEY", "CITED_WORK_SK", [resolved]
+            )
             updated += 1
         return updated
 
@@ -335,6 +453,16 @@ class WarehouseLoader:
 # Deterministic key helpers
 # ---------------------------------------------------------------------------
 
+
+def _publication_date_key(value: Any) -> int:
+    if not isinstance(value, str) or len(value) != 10:
+        return 0
+    from datetime import date
+
+    try:
+        return int(date.fromisoformat(value).strftime("%Y%m%d"))
+    except ValueError:
+        return 0
 
 def _hash_text(value: str) -> str:
     import hashlib
