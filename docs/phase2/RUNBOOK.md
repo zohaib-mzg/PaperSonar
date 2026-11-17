@@ -115,12 +115,17 @@ warehouse commands fail closed when Snowflake settings are missing or when
 | --- | --- |
 | `papersonar validate-config` | Structural validation; no network. |
 | `papersonar validate-config --mode ingest` | Additionally requires all Snowflake settings (exit 2 if missing). |
-| `papersonar migrate` | Applies versioned, non-destructive migrations (001, 002, 003). |
+| `papersonar migrate` | Applies versioned, non-destructive migrations (001–005). |
 | `papersonar sync --dry-run` | Plans this run's windows per source; fetches/writes nothing. |
 | `papersonar sync` | One incremental sync run. |
 | `papersonar backfill` | Bounded historical backfill (max 60 windows per source per run). |
+| `papersonar full` | Ordered backfill then sync in one run; **requires `PAPERSONAR_ALLOW_FULL=true`** (fail-closed otherwise). Never used by the scheduled workflow. |
+| `papersonar replay --source NAME --batch-id ID` | Reprocesses one persisted raw batch from the durable stage without any source API call; watermarks/cursors untouched; records `replay` lineage in `PROJECT_OPS.ETL_RUN`. |
 | `papersonar quality` | Runs the SQL quality gate. |
 | `papersonar smoke-test` | Connectivity + migrations + row counts (live acceptance). |
+
+Full configuration documentation (every variable, defaults, ranges, secret
+handling): [CONFIGURATION_REFERENCE.md](CONFIGURATION_REFERENCE.md).
 
 Exit codes: `0` succeeded, `1` partial (quality gate failed or some sources
 failed), `2` hard error/configuration failure.

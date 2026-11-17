@@ -4,7 +4,10 @@ Commands:
 - ``validate-config``: structural validation (no network); ``--mode ingest``
   additionally requires all mandatory Snowflake settings.
 - ``migrate``: apply versioned migrations to Snowflake.
-- ``sync`` / ``backfill``: run the ingestion pipeline (fail closed on config).
+- ``sync`` / ``backfill`` / ``full``: run the ingestion pipeline (fail closed
+  on config). ``full`` additionally requires PAPERSONAR_ALLOW_FULL=true.
+- ``replay``: reprocess one persisted raw batch from the durable stage
+  (no source API calls, watermarks untouched).
 - ``quality``: run the data-quality gate against the warehouse.
 - ``smoke-test``: connectivity + migrations + row counts (live acceptance).
 
@@ -55,6 +58,17 @@ def build_parser() -> argparse.ArgumentParser:
         "backfill", help="Run bounded historical backfill windows (requires Snowflake settings)."
     )
     backfill.add_argument("--dry-run", action="store_true", help="Plan windows and exit without fetching or writing.")
+    full = sub.add_parser(
+        "full",
+        help="Run ordered backfill then sync (requires PAPERSONAR_ALLOW_FULL=true).",
+    )
+    full.add_argument("--dry-run", action="store_true", help="Plan windows and exit without fetching or writing.")
+    replay = sub.add_parser(
+        "replay",
+        help="Reprocess one persisted raw batch from the durable stage (no network).",
+    )
+    replay.add_argument("--source", required=True, help="Source name the batch belongs to.")
+    replay.add_argument("--batch-id", required=True, help="Raw batch ID from PROJECT_OPS.RAW_BATCH.")
     sub.add_parser("quality", help="Run the data-quality gate against the Snowflake warehouse.")
     sub.add_parser(
         "smoke-test",
@@ -122,30 +136,50 @@ def _print_run_result(result) -> int:
     return 2
 
 
-def _run_sync_or_backfill(args: argparse.Namespace) -> int:
+def _run_sync_backfill_or_full(args: argparse.Namespace) -> int:
     settings = _load_settings_and_logging()
     from papersonar.orchestrator import Orchestrator
 
     if args.dry_run:
         settings.require_snowflake()
+        if args.command == "full" and not settings.allow_full:
+            from papersonar.errors import ConfigurationError
+
+            raise ConfigurationError(
+                "'full --dry-run' also requires PAPERSONAR_ALLOW_FULL=true."
+            )
         orchestrator = Orchestrator(settings)
-        mode = "sync" if args.command == "sync" else "backfill"
-        for name, enabled in sorted(settings.sources.items()):
-            if not enabled.enabled:
-                print(f"source {name}: disabled")
-                continue
-            windows = orchestrator._windows_for(name, mode)
-            for window in windows:
-                print(
-                    f"source {name}: {mode} window {window.stream_name} "
-                    f"({window.window_start}..{window.window_end or 'open'})"
-                )
+        phases = ["backfill", "sync"] if args.command == "full" else [args.command]
+        for phase in phases:
+            for name, enabled in sorted(settings.sources.items()):
+                if not enabled.enabled:
+                    print(f"source {name}: disabled")
+                    continue
+                windows = orchestrator._windows_for(name, phase)
+                for window in windows:
+                    print(
+                        f"source {name}: {phase} window {window.stream_name} "
+                        f"({window.window_start}..{window.window_end or 'open'})"
+                    )
         return 0
 
     warehouse = _warehouse_for(settings)
     try:
         orchestrator = Orchestrator(settings, warehouse=warehouse)
-        result = orchestrator.run("sync" if args.command == "sync" else "backfill")
+        result = orchestrator.run(args.command)
+        return _print_run_result(result)
+    finally:
+        warehouse.close()
+
+
+def _run_replay(args: argparse.Namespace) -> int:
+    settings = _load_settings_and_logging()
+    from papersonar.orchestrator import Orchestrator
+
+    warehouse = _warehouse_for(settings)
+    try:
+        orchestrator = Orchestrator(settings, warehouse=warehouse)
+        result = orchestrator.replay(args.source, args.batch_id)
         return _print_run_result(result)
     finally:
         warehouse.close()
@@ -210,8 +244,10 @@ def main(argv: list[str] | None = None) -> int:
             return _run_validate_config(args)
         if args.command == "migrate":
             return _run_migrate()
-        if args.command in ("sync", "backfill"):
-            return _run_sync_or_backfill(args)
+        if args.command in ("sync", "backfill", "full"):
+            return _run_sync_backfill_or_full(args)
+        if args.command == "replay":
+            return _run_replay(args)
         if args.command == "quality":
             return _run_quality()
         if args.command == "smoke-test":

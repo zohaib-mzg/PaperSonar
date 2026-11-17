@@ -285,3 +285,39 @@ Git shell.
 Live Snowflake row counts, scale thresholds (100+ dimension records and
 10,000+ fact rows), workflow execution, and final submission PDFs remain
 **BLOCKED / unverified**. No Phase 3 implementation has been started.
+
+---
+
+## 7. Post-merge audit fixes — 2026-11-17
+
+A fresh audit of the merged `phase2` checkout found and fixed the following;
+all claims below are reproduced by the current test suite.
+
+1. **Fixed: 7 orchestrator tests failed after the final squashed commit.**
+   The commit had replaced the test environment's `SNOWFLAKE_PRIVATE_KEY`
+   PEM-content placeholder with `TEST_PRIVATE_KEY_PLACEHOLDER`, which the
+   fail-closed validation in `config.py` (`private_key_pem()`) correctly
+   rejects — so `require_snowflake()` raised before any test logic ran. The
+   test environment was restored to valid PEM-content placeholders
+   (`tests/unit/test_orchestrator.py`); production validation was not weakened.
+2. **Fixed: missing configuration reference.** `.env.example` referenced
+   `docs/phase2/CONFIGURATION_REFERENCE.md`, which did not exist. The file now
+   documents every runtime variable (defaults, validated ranges, secret
+   handling) and all CLI commands.
+3. **Implemented: `papersonar replay --source NAME --batch-id ID`.** Fulfils
+   the Playbook 05 replay requirement and the Playbook 01 `load` mode:
+   reprocesses one persisted raw batch from the durable stage with **no source
+   API calls** (network use is asserted in tests), idempotent loads, `replay`
+   lineage row in `PROJECT_OPS.ETL_RUN`, watermarks/cursors untouched.
+4. **Implemented: `papersonar full` (ordered backfill + sync).** Fulfils the
+   Playbook 01 `full` mode: fails closed unless `PAPERSONAR_ALLOW_FULL` is
+   explicitly truthy; per-source statuses merge worst-of across phases; the
+   scheduled workflow never uses it (dispatch choices remain sync/backfill/
+   validate).
+5. **Docs updated:** RUNBOOK §2 command table now covers `replay`/`full`,
+   migration 005 in `migrate`, and links the configuration reference.
+
+Current result for this checkout: `python -m ruff check src tests` — all
+checks passed; `python -m pytest tests -q` — **163 passed, 0 failed, 0
+skipped** (mocked warehouse, no network). Live Snowflake items in §1/§5 remain
+**BLOCKED** exactly as listed above; this section changes nothing about them.
