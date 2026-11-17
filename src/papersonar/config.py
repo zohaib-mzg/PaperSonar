@@ -166,6 +166,7 @@ class Settings:
     corpus_config_path: str | None
     openalex_api_key: str | None
     crossref_contact_email: str | None
+    allow_full: bool = False
 
     # -- parsing ------------------------------------------------------------
 
@@ -222,6 +223,10 @@ class Settings:
             corpus_config_path=corpus_config_path,
             openalex_api_key=env.get("OPENALEX_API_KEY") or None,
             crossref_contact_email=env.get("CROSSREF_CONTACT_EMAIL") or None,
+            # Fail-closed: a full (backfill+sync) run only happens when this is
+            # explicitly set to a truthy value; anything else stays disabled.
+            allow_full=(env.get("PAPERSONAR_ALLOW_FULL") or "").strip().lower()
+            in ("1", "true", "yes", "on"),
         )
         settings.validate()
         return settings

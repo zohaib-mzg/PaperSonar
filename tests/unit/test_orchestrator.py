@@ -22,7 +22,7 @@ SNOWFLAKE_ENV = {
     "SNOWFLAKE_WAREHOUSE": "PAPERSONAR_WH",
     "SNOWFLAKE_DATABASE": "PAPERSONAR",
     "SNOWFLAKE_SCHEMA": "INGEST",
-    "SNOWFLAKE_PRIVATE_KEY": "TEST_PRIVATE_KEY_PLACEHOLDER",
+    "SNOWFLAKE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nMIIB\n-----END PRIVATE KEY-----",
 }
 
 
@@ -286,3 +286,134 @@ def test_max_pages_retries_from_next_completed_page(tmp_path, monkeypatch):
     saved = StateStore(warehouse).get_sync_state("openalex", f"year:{year}")
     assert saved.cursor_or_token is None
     assert saved.error_summary is None
+
+
+def settings_with_allow_full(enabled: dict[str, bool]) -> Settings:
+    env = {**SNOWFLAKE_ENV, "PAPERSONAR_ALLOW_FULL": "true"}
+    for name, is_enabled in enabled.items():
+        env[f"{name.upper()}_ENABLED"] = "true" if is_enabled else "false"
+    return Settings.from_env(env)
+
+
+def test_full_mode_requires_explicit_opt_in(tmp_path, monkeypatch):
+    """A full backfill+sync run must fail closed unless explicitly configured."""
+    patch_build_adapters(monkeypatch, tmp_path)
+    settings = settings_for(_enabled_only("openalex"))
+    assert settings.allow_full is False
+    warehouse = FakeWarehouse()
+    with pytest.raises(ConfigurationError, match="PAPERSONAR_ALLOW_FULL"):
+        Orchestrator(settings, warehouse=warehouse).run("full")
+    # Nothing was created: no run row, no tables beyond the empty mock state.
+    assert warehouse.count("PROJECT_OPS.ETL_RUN") == 0
+
+
+def test_full_mode_runs_backfill_then_sync(tmp_path, monkeypatch):
+    """full = ordered backfill phase then sync phase, one run row, gate applied."""
+    patch_build_adapters(monkeypatch, tmp_path)
+    settings = settings_with_allow_full(_enabled_only("openalex"))
+    assert settings.allow_full is True
+    warehouse = FakeWarehouse()
+    result = Orchestrator(settings, warehouse=warehouse).run("full")
+    assert result.status == "succeeded"
+    assert result.source_statuses == {"openalex": "succeeded"}
+    run_rows = warehouse.tables["PROJECT_OPS.ETL_RUN"].rows
+    assert len(run_rows) == 1
+    assert run_rows[0]["MODE"] == "full"
+    assert run_rows[0]["STATUS"] == "succeeded"
+    # Backfill created the year partitions and sync completed the current one.
+    year = __import__("datetime").date.today().year
+    state = StateStore(warehouse).get_sync_state("openalex", f"year:{year}")
+    assert state.last_successful_watermark == f"{year}-12-31"
+
+
+def test_replay_processes_batch_without_network(tmp_path, monkeypatch):
+    """Replay reruns a persisted raw batch from the stage without any HTTP call."""
+    from papersonar.raw_store import RawStore
+    from papersonar.sources.base import BaseAdapter
+    from papersonar.timeutil import utc_now
+    from tests.helpers import fixture_bytes
+
+    patch_build_adapters(monkeypatch, tmp_path)
+    settings = settings_for(_enabled_only("openalex"))
+    warehouse = FakeWarehouse()
+    orchestrator = Orchestrator(settings, warehouse=warehouse)
+    raw_store = RawStore(
+        warehouse=warehouse,
+        state_store=StateStore(warehouse),
+        raw_dir=tmp_path / "raw",
+        schema_version="1",
+    )
+    batch = raw_store.persist_batch(
+        run_id="run-seed-1",
+        source_name="openalex",
+        stream_name="year:2020",
+        window_start="2020-01-01",
+        window_end="2020-12-31",
+        page_seq=0,
+        page_cursor=None,
+        retrieved_at_utc=utc_now(),
+        http_status=200,
+        payload_bytes=fixture_bytes("openalex", "page1.json"),
+        records_seen=2,
+        request_descriptor={"url": "https://api.openalex.org/works"},
+    )
+
+    # Any network fetch during replay is a defect: make fetch_page explode.
+    def no_network(self_adapter, run_id, window):
+        raise AssertionError("replay must never call the source API")
+
+    monkeypatch.setattr(BaseAdapter, "fetch_page", no_network)
+
+    first = orchestrator.replay("openalex", batch.batch_id)
+    assert first.mode == "replay"
+    assert first.status == "succeeded"
+    assert first.source_statuses == {"openalex": "succeeded"}
+    assert first.staging_rows == 2
+    counts_after_first = {
+        table: warehouse.count(table)
+        for table in (
+            "PROJECT_STAGING.STG_WORK_RECORD",
+            "PROJECT_DW.DIM_WORK",
+            "PROJECT_DW.WORK_SOURCE_XW",
+            "PROJECT_DW.FACT_PUBLICATION",
+        )
+    }
+    assert counts_after_first["PROJECT_DW.DIM_WORK"] == 2
+
+    # Replaying the same batch again is idempotent: no new staging/dim/fact rows.
+    second = orchestrator.replay("openalex", batch.batch_id)
+    assert second.status == "succeeded"
+    for table, count_value in counts_after_first.items():
+        assert warehouse.count(table) == count_value, f"{table} changed on replay"
+
+    run_rows = warehouse.tables["PROJECT_OPS.ETL_RUN"].rows
+    assert [row["MODE"] for row in run_rows] == ["replay", "replay"]
+    assert all(row["STATUS"] == "succeeded" for row in run_rows)
+
+
+def test_replay_rejects_unknown_batch(tmp_path, monkeypatch):
+    """Replay of a batch that is not in the registry fails without a source call."""
+    from papersonar.sources.base import BaseAdapter
+
+    patch_build_adapters(monkeypatch, tmp_path)
+    settings = settings_for(_enabled_only("openalex"))
+    warehouse = FakeWarehouse()
+    orchestrator = Orchestrator(settings, warehouse=warehouse)
+
+    def no_network(self_adapter, run_id, window):
+        raise AssertionError("replay must never call the source API")
+
+    monkeypatch.setattr(BaseAdapter, "fetch_page", no_network)
+    result = orchestrator.replay("openalex", "no-such-batch")
+    assert result.status == "failed"
+    assert "No raw batch" in result.error_summary
+    run_rows = warehouse.tables["PROJECT_OPS.ETL_RUN"].rows
+    assert len(run_rows) == 1
+    assert run_rows[0]["MODE"] == "replay"
+    assert run_rows[0]["STATUS"] == "failed"
+
+
+def test_replay_rejects_unapproved_source(tmp_path):
+    settings = settings_for(_enabled_only("openalex"))
+    with pytest.raises(ConfigurationError, match="approved sources"):
+        Orchestrator(settings, warehouse=FakeWarehouse()).replay("not-a-source", "batch")

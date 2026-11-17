@@ -79,9 +79,19 @@ class Orchestrator:
     # -- public API ----------------------------------------------------------
 
     def run(self, mode: str) -> RunResult:
-        """Execute one pipeline run. Mode: ``backfill`` or ``sync``."""
-        if mode not in ("backfill", "sync"):
+        """Execute one pipeline run. Mode: ``backfill``, ``sync`` or ``full``.
+
+        ``full`` (historical backfill followed by one incremental sync) runs
+        only when ``PAPERSONAR_ALLOW_FULL`` is explicitly truthy; scheduled and
+        routine execution must use ``sync``.
+        """
+        if mode not in ("backfill", "sync", "full"):
             raise ConfigurationError(f"Unknown run mode: {mode!r}")
+        if mode == "full" and not self.settings.allow_full:
+            raise ConfigurationError(
+                "A full backfill+sync run requires PAPERSONAR_ALLOW_FULL=true. "
+                "Routine execution must use 'sync'; backfill is bounded separately."
+            )
         # Fail closed BEFORE any source API call.
         self.settings.require_snowflake()
         enabled = [name for name, source in self.settings.sources.items() if source.enabled]
@@ -102,14 +112,20 @@ class Orchestrator:
         )
         try:
             MigrationRunner(warehouse).apply_all()
-            for name in enabled:
-                source_status, counters = self._run_source(name, run_id, mode, state)
-                result.source_statuses[name] = source_status
-                result.raw_records += counters.get("raw_records", 0)
-                result.staging_rows += counters.get("staging_rows", 0)
-                result.quarantined += counters.get("quarantined", 0)
-                result.warehouse_rows += counters.get("warehouse_rows", 0)
-                result.retry_count += counters.get("retries", 0)
+            phases = ["backfill", "sync"] if mode == "full" else [mode]
+            phase_statuses: dict[str, list[str]] = {}
+            for phase in phases:
+                for name in enabled:
+                    source_status, counters = self._run_source(name, run_id, phase, state)
+                    phase_statuses.setdefault(name, []).append(source_status)
+                    result.raw_records += counters.get("raw_records", 0)
+                    result.staging_rows += counters.get("staging_rows", 0)
+                    result.quarantined += counters.get("quarantined", 0)
+                    result.warehouse_rows += counters.get("warehouse_rows", 0)
+                    result.retry_count += counters.get("retries", 0)
+            result.source_statuses = {
+                name: _merge_phase_statuses(statuses) for name, statuses in phase_statuses.items()
+            }
             gate = QualityGate(warehouse).run()
             result.gate_summary = gate.summary
             result.status = _final_status(result.source_statuses, gate.passed)
@@ -117,6 +133,74 @@ class Orchestrator:
             result.status = "failed"
             result.error_summary = f"{type(exc).__name__}: {exc}"
             logger.error("run failed: %s", exc)
+        finally:
+            state.finish_run(
+                run_id=run_id,
+                status=result.status,
+                finished_at=utc_now(),
+                source_statuses=result.source_statuses,
+                raw_rows=result.raw_records,
+                staging_rows=result.staging_rows,
+                quarantined_rows=result.quarantined,
+                warehouse_rows=result.warehouse_rows,
+                retry_count=result.retry_count,
+                quality_gate_result=result.gate_summary or None,
+                error_summary=result.error_summary,
+            )
+        return result
+
+    def replay(self, source_name: str, batch_id: str) -> RunResult:
+        """Reprocess one persisted raw batch without any source API call.
+
+        Reads the byte-exact payload from the durable raw stage, reruns
+        parsing/validation/staging/warehouse loads idempotently, records a
+        dedicated ``replay`` run lineage row, and never touches watermarks or
+        cursors. Fulfils the Playbook 05 replay and Playbook 01 ``load`` mode.
+        """
+        if source_name not in ADAPTERS:
+            raise ConfigurationError(
+                f"Unknown source {source_name!r}; approved sources: {', '.join(ADAPTERS)}"
+            )
+        # Fail closed BEFORE touching the warehouse (no network is used).
+        self.settings.require_snowflake()
+        warehouse = self._ensure_warehouse()
+        run_id = _new_run_id()
+        result = RunResult(run_id=run_id, mode="replay")
+        state = StateStore(warehouse)
+        state.create_run(
+            run_id=run_id,
+            mode="replay",
+            started_at=utc_now(),
+            git_commit=_git_commit(),
+            config_checksum=self._config_checksum(),
+            code_version=__version__,
+        )
+        try:
+            MigrationRunner(warehouse).apply_all()
+            batch = state.get_batch(batch_id)
+            if batch is None or str(batch.get("SOURCE_NAME") or "") != source_name:
+                raise ConfigurationError(
+                    f"No raw batch {batch_id!r} for source {source_name!r} in PROJECT_OPS.RAW_BATCH"
+                )
+            counters = {
+                "raw_records": 0,
+                "staging_rows": 0,
+                "quarantined": 0,
+                "warehouse_rows": 0,
+                "retries": 0,
+            }
+            result.source_statuses[source_name] = self._replay_batch(batch, run_id, state, counters)
+            result.raw_records += counters["raw_records"]
+            result.staging_rows += counters["staging_rows"]
+            result.quarantined += counters["quarantined"]
+            result.warehouse_rows += counters["warehouse_rows"]
+            gate = QualityGate(warehouse).run()
+            result.gate_summary = gate.summary
+            result.status = _final_status(result.source_statuses, gate.passed)
+        except Exception as exc:  # noqa: BLE001 - run-level error boundary
+            result.status = "failed"
+            result.error_summary = f"{type(exc).__name__}: {exc}"
+            logger.error("replay failed: %s", exc)
         finally:
             state.finish_run(
                 run_id=run_id,
@@ -339,6 +423,43 @@ class Orchestrator:
         )
         return "succeeded"
 
+    def _replay_batch(
+        self,
+        batch: dict[str, Any],
+        run_id: str,
+        state: StateStore,
+        counters: dict[str, int],
+    ) -> str:
+        """Process one registered raw batch through staging/warehouse, no network."""
+        raw_store = RawStore(
+            warehouse=self._warehouse,
+            state_store=state,
+            raw_dir=self.settings.raw_dir,
+            schema_version=self.settings.schema_version,
+        )
+        payload_path = raw_store.load_payload(str(batch["BATCH_ID"]), into_dir=self.settings.raw_dir / "_replay")
+        adapter = self._build_adapter(str(batch["SOURCE_NAME"]))
+        parsed = adapter.parse_page(payload_path.read_bytes())
+        validator = StagingValidator(schema_version=self.settings.schema_version)
+        loader = WarehouseLoader(self._warehouse)
+        resolver = CanonicalResolver(self._warehouse)
+        outcome = validator.validate_batch(
+            parsed.records, run_id=run_id, batch_id=str(batch["BATCH_ID"])
+        )
+        loader.load_staging(outcome)
+        loader.load_quarantine(outcome)
+        resolved = resolver.resolve_batch(outcome.accepted, run_id)
+        loader.load_canonical(resolved)
+        loader.load_dimensions(resolved.resolved_rows)
+        loader.load_facts(resolved, run_id)
+        loader.refresh_citation_resolution()
+        raw_store.mark_complete(str(batch["BATCH_ID"]))
+        counters["raw_records"] += int(batch["RECORDS_SEEN"] or outcome.records_seen)
+        counters["staging_rows"] += len(outcome.accepted)
+        counters["quarantined"] += len(outcome.quarantined)
+        counters["warehouse_rows"] += len(resolved.canonical_rows)
+        return "succeeded"
+
     def _prev_watermark(self, source_name: str, stream_name: str) -> str | None:
         return _previous_watermark(self._warehouse, source_name, stream_name)
 
@@ -474,6 +595,17 @@ def _final_status(source_statuses: dict[str, str], gate_passed: bool) -> str:
         return "succeeded"
     if any_ok or all_ok:
         # Gate failed -> partial at best; some sources failed -> partial.
+        return "partial"
+    return "failed"
+
+
+def _merge_phase_statuses(statuses: list[str]) -> str:
+    """Worst-of merge for a source's statuses across run phases (e.g. full)."""
+    if not statuses:
+        return "failed"
+    if all(status == "succeeded" for status in statuses):
+        return "succeeded"
+    if any(status == "succeeded" for status in statuses):
         return "partial"
     return "failed"
 
