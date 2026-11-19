@@ -8,6 +8,7 @@ from papersonar.config import Settings
 from papersonar.errors import ConfigurationError
 from papersonar.orchestrator import Orchestrator, _final_status
 from papersonar.sources.crossref import CrossrefAdapter
+from papersonar.timeutil import today_utc
 from papersonar.warehouse.state_store import StateStore
 from tests.fakes.fake_warehouse import FakeWarehouse
 from tests.helpers import FakeResponse, FakeSession
@@ -100,10 +101,10 @@ class TestOrchestrator:
         assert run_rows[0]["QUALITY_GATE_RESULT"] == "PASS"
         assert run_rows[0]["MODE"] == "sync"
         # Watermark advanced for the openalex partition
-        state = StateStore(warehouse).get_sync_state("openalex", f"year:{__import__('datetime').date.today().year}")
+        state = StateStore(warehouse).get_sync_state("openalex", f"year:{today_utc().year}")
         assert state is not None
         assert state.status == "succeeded"
-        assert state.last_successful_watermark == f"{__import__('datetime').date.today().year}-12-31"
+        assert state.last_successful_watermark == f"{today_utc().year}-12-31"
         # Migrations applied and warehouse populated (001, 002, 003)
         assert warehouse.count("PROJECT_DW.DIM_WORK") == 2
         assert warehouse.count("PROJECT_OPS.SCHEMA_MIGRATION") == 5
@@ -136,7 +137,7 @@ class TestOrchestrator:
         assert run_rows[0]["STATUS"] == "partial"
         assert run_rows[0]["ERROR_SUMMARY"] is None  # source failures don't abort the run
         # Watermark NOT advanced for the failed source
-        state = StateStore(warehouse).get_sync_state("openalex", f"year:{__import__('datetime').date.today().year}")
+        state = StateStore(warehouse).get_sync_state("openalex", f"year:{today_utc().year}")
         assert state is not None
         assert state.status == "failed"
         assert state.last_successful_watermark is None
@@ -163,7 +164,7 @@ class TestOrchestrator:
             {"openalex": True, "crossref": False, "arxiv": False, "datacite": False, "zenodo": False}
         )
         warehouse = FakeWarehouse()
-        year = __import__("datetime").date.today().year
+        year = today_utc().year
         StateStore(warehouse).save_sync_state(
             SyncState(
                 source_name="openalex",
@@ -220,13 +221,13 @@ class TestPipelineSafety:
         result = Orchestrator(settings, warehouse=warehouse).run("sync")
         assert result.status == "partial"
         state = StateStore(warehouse)
-        year = __import__("datetime").date.today().year
+        year = today_utc().year
         # openalex failed -> its watermark untouched
         openalex_state = state.get_sync_state("openalex", f"year:{year}")
         assert openalex_state.status == "failed"
         assert openalex_state.last_successful_watermark is None
         # crossref succeeded -> its watermark advanced independently
-        today = __import__("datetime").date.today()
+        today = today_utc()
         crossref_source = settings.sources["crossref"]
         start = (today - __import__("datetime").timedelta(days=1)) - __import__("datetime").timedelta(
             days=crossref_source.sync_overlap_days
@@ -276,7 +277,7 @@ def test_max_pages_retries_from_next_completed_page(tmp_path, monkeypatch):
     monkeypatch.setattr(Orchestrator, "_build_adapter", build)
     first = Orchestrator(settings, warehouse=warehouse).run("sync")
     assert first.status == "failed"
-    year = __import__("datetime").date.today().year
+    year = today_utc().year
     saved = StateStore(warehouse).get_sync_state("openalex", f"year:{year}")
     assert saved.cursor_or_token == "IlsxNzA0MDQ0ODAwMDAwMDAwL"
     assert saved.last_successful_watermark is None
@@ -321,7 +322,7 @@ def test_full_mode_runs_backfill_then_sync(tmp_path, monkeypatch):
     assert run_rows[0]["MODE"] == "full"
     assert run_rows[0]["STATUS"] == "succeeded"
     # Backfill created the year partitions and sync completed the current one.
-    year = __import__("datetime").date.today().year
+    year = today_utc().year
     state = StateStore(warehouse).get_sync_state("openalex", f"year:{year}")
     assert state.last_successful_watermark == f"{year}-12-31"
 

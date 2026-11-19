@@ -58,7 +58,7 @@ def test_deploying_setup_directory_directly_is_allowed(tmp_path: Path) -> None:
     assert deployed == ["00_database.sql"]
 
 
-def test_deploy_resumes_task_graph_after_recreate(tmp_path: Path) -> None:
+def test_deploy_prepares_task_graph_for_on_demand_runs(tmp_path: Path) -> None:
     _write(tmp_path, TASK_GRAPH_SQL)
     executed: list[str] = []
 
@@ -69,7 +69,16 @@ def test_deploy_resumes_task_graph_after_recreate(tmp_path: Path) -> None:
     assert f"ALTER TASK {ROOT_TASK} SUSPEND" in executed
     for task in ELT_CHILD_TASKS:
         assert f"ALTER TASK {task} RESUME" in executed
-    assert executed[-1] == f"ALTER TASK {ROOT_TASK} RESUME"
+    assert f"ALTER TASK {ROOT_TASK} RESUME" not in executed
+    assert executed[-1] == f"ALTER TASK {ELT_CHILD_TASKS[-1]} RESUME"
+
+
+def test_execute_root_task_runs_suspended_root_on_demand() -> None:
+    executed: list[str] = []
+
+    _client(executed).execute_root_task()
+
+    assert executed == [f"EXECUTE TASK {ROOT_TASK}"]
 
 
 def test_deploy_without_task_graph_does_not_resume(tmp_path: Path) -> None:

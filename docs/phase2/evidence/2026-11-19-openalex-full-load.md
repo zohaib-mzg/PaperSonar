@@ -5,8 +5,9 @@ Captured 2026-11-19 UTC with `PAPERSONAR_ADMIN` for SQL/task queries and
 no credentials or account identifiers are recorded.
 
 > **Scheduler note:** this run happened while the root still had a 03:00 UTC
-> cron. The current version has no Snowflake `SCHEDULE`; GitHub Actions is the
-> only scheduler. The graph execution and publication evidence remains valid.
+> cron and all 10 tasks were resumed. The current version has no Snowflake
+> `SCHEDULE`; GitHub Actions is the only scheduler and the root stays suspended
+> for `EXECUTE TASK`. The graph execution and publication evidence remains valid.
 
 ## Extraction
 

@@ -442,19 +442,24 @@ class SnowflakeClient:
         return rounds
 
     def execute_root_task(self) -> None:
+        """Run the root on demand; Snowflake allows EXECUTE TASK on a suspended root."""
         self.execute(f"EXECUTE TASK {ROOT_TASK}")
 
     def resume_task_graph(self) -> None:
-        """Resume the ELT graph after CREATE OR REPLACE TASK suspends every task.
+        """Prepare the ELT graph after CREATE OR REPLACE TASK suspends every task.
 
-        Child tasks must be resumed before the root so GitHub's `EXECUTE TASK`
-        never fires into a graph whose children are still suspended.
+        Snowflake requires SCHEDULE, AFTER, FINALIZE, or WHEN before a task can be
+        RESUMED. The root deliberately has none, so it stays suspended and GitHub
+        runs it with EXECUTE TASK. Only child tasks need RESUME; suspended children
+        are skipped when the root runs.
         """
         self.execute(f"ALTER TASK {ROOT_TASK} SUSPEND")
         for task in ELT_CHILD_TASKS:
             self.execute(f"ALTER TASK {task} RESUME")
-        self.execute(f"ALTER TASK {ROOT_TASK} RESUME")
-        logger.info("resumed %d ELT tasks plus the root task", len(ELT_CHILD_TASKS))
+        logger.info(
+            "resumed %d ELT child tasks; root remains suspended for EXECUTE TASK",
+            len(ELT_CHILD_TASKS),
+        )
 
     def deploy_sql(self, sql_dir: Path, *, include_setup: bool = False) -> list[str]:
         """Upload SQL files and execute them with ``EXECUTE IMMEDIATE FROM``.
@@ -465,8 +470,8 @@ class SnowflakeClient:
         views and dynamic tables). ``sql/00_setup`` is skipped by default
         because database/role/account grants require one-time administrative
         privileges; pass ``include_setup=True`` only for that controlled run.
-        When the task graph SQL is deployed, the graph is resumed afterwards so
-        ``CREATE OR REPLACE TASK`` does not leave it suspended.
+        When the task graph SQL is deployed, child tasks are resumed afterwards
+        and the root is left suspended for on-demand ``EXECUTE TASK`` calls.
         """
         deployed: list[str] = []
         task_graph_deployed = False

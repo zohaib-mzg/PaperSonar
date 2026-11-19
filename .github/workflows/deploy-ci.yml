@@ -119,6 +119,6 @@ jobs:
             echo "- Trigger: ${{ github.event_name }}"
             echo "- Commit: ${{ github.sha }}"
             echo "- Manual-only files (materialized views/dynamic tables) are skipped."
-            echo "- The ELT task graph is resumed automatically after the task SQL is deployed."
+            echo "- ELT child tasks are resumed automatically; the root stays suspended for GitHub's EXECUTE TASK trigger."
             echo "- Evidence: see PROJECT_AUDIT.RUN_LOG and task history after the first graph run."
           } >> "$GITHUB_STEP_SUMMARY"

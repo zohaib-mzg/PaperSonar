@@ -155,22 +155,24 @@ Future-table grants are already included, but re-running is a safe verification 
 ## 5. Start the task graph
 
 `CREATE OR REPLACE TASK` recreates the graph suspended. `python -m runner.cli deploy --sql-dir sql --yes`
-(and `deploy-ci.yml`) now resumes it automatically after applying
-`sql/09_tasks/02_task_graph.sql`: suspend the root, resume every child, then
-resume the root. Confirm with:
+(and `deploy-ci.yml`) now prepares it automatically after applying
+`sql/09_tasks/02_task_graph.sql`: keep the root suspended and resume every child.
+Confirm with:
 
 ```sql
 SHOW TASKS IN SCHEMA PAPERSONAR.PROJECT_AUDIT;
 ```
 
-Every task should show `state = started`. If you must resume manually, use the
-same order: root `SUSPEND`, all children `RESUME`, root `RESUME`. Never resume the
-root while a child is still suspended.
+The 9 child/finalizer tasks should show `state = started`. The root should show
+`state = suspended` — this is correct. Snowflake refuses to RESUME a task that
+has no `SCHEDULE`, `AFTER`, `FINALIZE` or `WHEN`, and this root intentionally has
+none. `EXECUTE TASK` can run a suspended root, so GitHub does not need it started.
+If you must repair manually, resume children only; leave the root suspended.
 
 **GitHub Actions is the only scheduler.** The Snowflake root has no cron schedule
-and runs only through `EXECUTE TASK`. GitHub extracts at `02:30 UTC` and calls
+and runs on demand through `EXECUTE TASK`. GitHub extracts at `02:30 UTC` and calls
 `python -m runner.cli trigger --drain` once after every source reaches `LOADED`.
-Do not add a second Snowflake schedule.
+Do not add a second Snowflake schedule and do not RESUME the root.
 
 ---
 
