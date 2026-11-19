@@ -8,6 +8,8 @@ transforms, DQ gating and publication.
 
 0. [NEXT_STEPS.md](NEXT_STEPS.md) — short handoff checklist: GitHub-only
    scheduling, secrets/variable, one-time Snowflake setup, and verification.
+0. [PIPELINE_FLOW_GUIDE.md](PIPELINE_FLOW_GUIDE.md) — plain-language full data
+   flow: when incremental runs happen, where data lands, and how SQL runs.
 1. [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) — implemented artifacts,
    verification matrix, known `VERIFY:` items, and traceability to all 20 specs.
 2. [spec/19_IMPLEMENTATION_PLAN.md](spec/19_IMPLEMENTATION_PLAN.md) — build order
