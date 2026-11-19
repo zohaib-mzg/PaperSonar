@@ -31,7 +31,7 @@ Only batches with status `LOADED` are eligible. Claim a batch safely before proc
 ## Task definitions
 Dependencies are explicit with `AFTER`; the root has no Snowflake `SCHEDULE`. GitHub owns freshness via its 02:30 UTC cron, and `trigger --drain` calls the root once per loaded batch. Do not add a second Snowflake cron or schedule sources independently inside Snowflake.
 
-Every task records run ID, batch ID, start/end, query ID if available, row counts, status, and error details. Configure bounded retries where supported and `SUSPEND_TASK_AFTER_NUM_FAILURES` appropriately. `VERIFY:` exact task parameter names, retry semantics, graph finalizer patterns, and whether root `EXECUTE TASK` is supported in the selected configuration.
+Every task records run ID, batch ID, start/end, query ID if available, row counts, status, and error details. Configure bounded retries where supported and `SUSPEND_TASK_AFTER_NUM_FAILURES` appropriately. `VERIFY:` exact task parameter names, retry semantics, and graph finalizer patterns. Root `EXECUTE TASK` on a suspended root is supported for a user-managed warehouse: https://docs.snowflake.com/en/sql-reference/sql/execute-task.
 
 ## SQL execution model
 `sql/09_tasks/02_task_graph.sql` creates the root, eight child tasks and the finalizer with `CREATE OR REPLACE TASK`. Stage procedures read the active batch from `PROJECT_AUDIT.CURRENT_BATCH`; no untrusted value is concatenated into task definitions. SQL files are version-controlled as plain text; only raw data files are gzip-compressed.
@@ -52,15 +52,15 @@ Default: user-managed XS warehouse with 60-second auto-suspend. Serverless tasks
 - Finalizer fails: reconcile actual table state and manifest before retrying.
 
 ## Deploy and resume
-`CREATE OR REPLACE TASK` recreates tasks in `suspended` state. `runner.cli deploy` and `deploy-ci.yml` therefore resume the graph immediately after `sql/09_tasks/02_task_graph.sql` is applied:
+`CREATE OR REPLACE TASK` recreates tasks in `suspended` state. `runner.cli deploy` and `deploy-ci.yml` therefore prepare the graph immediately after `sql/09_tasks/02_task_graph.sql` is applied:
 
 1. `ALTER TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT SUSPEND`
 2. `ALTER TASK` ... `RESUME` for every child task
-3. `ALTER TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT RESUME`
+3. Leave the root suspended. Snowflake requires `SCHEDULE`, `AFTER`, `FINALIZE`, or `WHEN` before a task can be resumed, and the root intentionally has none.
 
-Children are resumed before the root so a GitHub `EXECUTE TASK` can never fire into a suspended graph. Manual pause/resume remains available for incident response.
+Children are resumed so a GitHub `EXECUTE TASK` can never fire into a graph with suspended children. `EXECUTE TASK` runs a suspended root without resuming it. Manual child resume remains available for incident response.
 
-`VERIFY:` confirm `CREATE OR REPLACE TASK` semantics, child/finalizer dependency preservation, and that a root without `SCHEDULE` runs only on demand: https://docs.snowflake.com/en/sql-reference/sql/create-task.
+`VERIFY:` confirm `CREATE OR REPLACE TASK` semantics, child/finalizer dependency preservation, and that `EXECUTE TASK` can run a suspended root: https://docs.snowflake.com/en/sql-reference/sql/create-task and https://docs.snowflake.com/en/sql-reference/sql/execute-task.
 
 ## Pause
 Disable GitHub cron and suspend/disable root and child tasks using supported task controls. Suspend warehouse when safe. Verify graph-wide suspension behavior in the account.

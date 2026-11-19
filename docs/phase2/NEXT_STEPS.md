@@ -111,13 +111,16 @@ $env:SNOWFLAKE_ROLE = "PAPERSONAR_ADMIN"
 python -m runner.cli deploy --sql-dir sql --yes
 ```
 
-Deployment resumes the task graph automatically. Verify:
+Deployment prepares the task graph automatically. Verify:
 
 ```sql
 SHOW TASKS IN SCHEMA PAPERSONAR.PROJECT_AUDIT;
 ```
 
-All 10 tasks must show `state = started`. If SQL was applied manually in Snowsight instead of the CLI/deploy workflow, resume children first, then the root.
+The 9 child/finalizer tasks must show `state = started`. The root must show
+`state = suspended` — that is correct. Snowflake rejects `ALTER TASK ... RESUME`
+on a root with no `SCHEDULE`, `AFTER`, `FINALIZE` or `WHEN`; GitHub runs the
+suspended root with `EXECUTE TASK`. Do not resume the root manually.
 
 ---
 

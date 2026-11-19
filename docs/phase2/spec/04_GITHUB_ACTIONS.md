@@ -39,7 +39,7 @@ Steps:
 2. Run `ruff` and `pytest` (including SQL static contracts).
 3. Authenticate with `SNOWFLAKE_DEPLOY_ROLE` (`PAPERSONAR_ADMIN`, never `ACCOUNTADMIN`).
 4. Upload SQL files to the internal `SQL_STAGE` with `PUT` and apply them with `EXECUTE IMMEDIATE FROM`.
-5. When `09_tasks/02_task_graph.sql` is deployed, resume the task graph automatically: suspend the root, resume all children, then resume the root. Children must be resumed before the root.
+5. When `09_tasks/02_task_graph.sql` is deployed, prepare the graph automatically: keep the root suspended (Snowflake cannot RESUME it without a trigger) and resume all child tasks. GitHub triggers the suspended root with `EXECUTE TASK`.
 6. Save test results and sanitized logs.
 7. Fail the check if any mandatory test fails.
 
@@ -64,8 +64,8 @@ Store private key, passphrase if any, account, username, role, and required conn
 - Retries and concurrency do not duplicate data.
 - Secrets are absent from logs.
 - CI proves SQL lint, Python tests, DDL deployment, and SQL checks.
-- A recreated task graph is resumed before the root can be triggered.
-- GitHub Actions is the only scheduler; the Snowflake root has no cron schedule.
+- Child tasks in a recreated graph are resumed before the root is triggered.
+- GitHub Actions is the only scheduler; the Snowflake root has no cron schedule and stays suspended for on-demand `EXECUTE TASK`.
 - OpenAlex incremental fails closed for an explicit run and is skipped in all-source runs without Member+/Partner daily sync.
 
 ## References
