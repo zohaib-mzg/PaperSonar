@@ -47,7 +47,6 @@ sources:
     enabled: true
     entity: work
     page_size: 100
-    max_pages: 3          # test only, remove before a real run
     select: [DOI,URL,title,issued,type,container-title,author,subject,reference,is-referenced-by-count,created,indexed]
     rate_delay_seconds: 0.2
     timeout_seconds: 90
