@@ -353,7 +353,8 @@ Only do this after the Snowflake work is accepted, or if you are explicitly prep
 - [ ] Get explicit authorization for `--force-with-lease`.
 - [ ] Never use plain `--force`.
 
-Nothing has been committed, tagged, branched, or pushed yet.
+The implementation is committed and pushed to `origin/phase2` (`9f9cf0f`).
+No tag, backup branch, force push, or merge to `main` has been performed.
 
 ---
 
