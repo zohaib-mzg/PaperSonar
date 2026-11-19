@@ -57,7 +57,7 @@ Quarantine records must include a stable reason code, source identity, raw batch
 ## Canonical identity
 
 1. Normalize DOI for comparison only. Preserve original value.
-2. Keep source crosswalks: source name + source record ID → canonical work ID.
+2. Keep source crosswalks: source name + source record ID ΓåÆ canonical work ID.
 3. Prefer stable provider IDs over title text.
 4. DOI matching can merge records only when supporting fields do not indicate a material conflict.
 5. If two records share a DOI but have incompatible titles, types or dates, quarantine the conflict for review.

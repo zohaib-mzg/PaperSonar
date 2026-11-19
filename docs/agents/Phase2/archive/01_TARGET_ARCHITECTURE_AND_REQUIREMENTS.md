@@ -2,7 +2,7 @@
 
 ## Target flow
 
-Approved sources → source-specific extraction → raw payloads and manifests → staging and validation → canonical identity resolution → dimensional warehouse → quality gates and operational logs.
+Approved sources ΓåÆ source-specific extraction ΓåÆ raw payloads and manifests ΓåÆ staging and validation ΓåÆ canonical identity resolution ΓåÆ dimensional warehouse ΓåÆ quality gates and operational logs.
 
 Reporting/dashboard implementation belongs to Phase 3. Phase 2 may provide SQL-ready tables and views required by the approved analytical questions, but must not build the dashboard.
 
@@ -56,11 +56,11 @@ Conflict policy:
 ### E. Dimensional warehouse
 The warehouse must follow the approved data dictionary and physical model. Do not change fact grain without documenting a migration and updating tests. Expected grains:
 - `fact_publication`: one admitted canonical work;
-- `fact_work_snapshot`: one canonical work × successful observation date/run;
+- `fact_work_snapshot`: one canonical work ├ù successful observation date/run;
 - `fact_citation`: one distinct directed citing-work/cited-work pair;
-- `bridge_work_topic`: one work × topic;
-- `bridge_work_author`: one work × author;
-- `bridge_work_institution`: one work × institution.
+- `bridge_work_topic`: one work ├ù topic;
+- `bridge_work_author`: one work ├ù author;
+- `bridge_work_institution`: one work ├ù institution.
 
 A source's cumulative current citation count is not historical citation history. Snapshot history begins with the first successful local observation.
 

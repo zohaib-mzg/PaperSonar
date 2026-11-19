@@ -25,6 +25,8 @@ dist/
 /data/staging/
 /data/processed/
 /data/warehouse/
+# Local extraction shards/manifests and upload logs (evidence lives in docs/phase2/evidence/)
+/data/extract/
 /backups/
 *.dump
 

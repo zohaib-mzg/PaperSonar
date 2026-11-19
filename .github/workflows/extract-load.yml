@@ -1,0 +1,228 @@
+name: extract-load
+
+# PaperSonar strict-ELT extraction. Python only fetches raw source records,
+# writes gzip NDJSON, uploads them to the Snowflake internal stage, registers the
+# manifest, and triggers the SQL task graph. No field cleaning, identity
+# resolution, deduplication, categorization or key assignment happens here.
+
+on:
+  schedule:
+    # Daily incremental extraction. OpenAlex incremental requires Member+/Partner
+    # daily sync; the plan guard fails closed until that entitlement is enabled.
+    # The Snowflake task graph is drained once after all sources finish loading.
+    - cron: "30 2 * * *"
+  workflow_dispatch:
+    inputs:
+      source:
+        description: "Source to extract"
+        required: true
+        default: "all"
+        type: choice
+        options:
+          - all
+          - openalex
+          - crossref
+          - arxiv
+          - datacite
+          - zenodo
+      mode:
+        description: "Extraction window mode"
+        required: true
+        default: "incremental"
+        type: choice
+        options:
+          - incremental
+          - full
+      from_date:
+        description: "Optional window start (YYYY-MM-DD)"
+        required: false
+        type: string
+      until_date:
+        description: "Optional window end (YYYY-MM-DD)"
+        required: false
+        type: string
+      dry_run:
+        description: "Write local shards only; no Snowflake upload, no task"
+        required: false
+        default: false
+        type: boolean
+      force:
+        description: "Re-extract a batch already LOADED/PROCESSING/PUBLISHED"
+        required: false
+        default: false
+        type: boolean
+      openalex_daily_sync:
+        description: "Confirm OpenAlex Member+/Partner daily sync is enabled for incremental runs"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: papersonar-extract
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  tests:
+    name: lint and deterministic tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Ruff
+        run: python -m ruff check src tests
+      - name: Pytest
+        run: python -m pytest tests -q
+
+  extract:
+    name: extract and load
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    env:
+      PAPERSONAR_TARGET: snowflake
+      DRY_RUN: ${{ inputs.dry_run || false }}
+      FORCE: ${{ inputs.force || false }}
+      OPENALEX_DAILY_SYNC: ${{ inputs.openalex_daily_sync || false }}
+      MODE: ${{ inputs.mode || 'incremental' }}
+      SOURCE: ${{ inputs.source || 'all' }}
+      FROM_DATE: ${{ inputs.from_date }}
+      UNTIL_DATE: ${{ inputs.until_date }}
+      OPENALEX_API_KEY: ${{ secrets.OPENALEX_API_KEY }}
+      CROSSREF_CONTACT_EMAIL: ${{ secrets.CROSSREF_CONTACT_EMAIL }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Check required source secrets (names only)
+        env:
+          REQUIRED_SECRETS: "OPENALEX_API_KEY CROSSREF_CONTACT_EMAIL"
+        run: |
+          missing=""
+          for name in $REQUIRED_SECRETS; do
+            if [ -z "$(eval "echo \${$name:-}")" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required source secrets:$missing"
+            exit 1
+          fi
+      - name: Check Snowflake secrets and role (non-dry runs only)
+        if: ${{ env.DRY_RUN != 'true' }}
+        env:
+          REQUIRED_SECRETS: >-
+            SNOWFLAKE_ACCOUNT
+            SNOWFLAKE_USER
+            SNOWFLAKE_ROLE
+            SNOWFLAKE_WAREHOUSE
+            SNOWFLAKE_DATABASE
+            SNOWFLAKE_SCHEMA
+            SNOWFLAKE_PRIVATE_KEY
+        run: |
+          missing=""
+          for name in $REQUIRED_SECRETS; do
+            if [ -z "$(eval "echo \${$name:-}")" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required Snowflake secrets:$missing"
+            exit 1
+          fi
+          if [ "${SNOWFLAKE_ROLE}" = "ACCOUNTADMIN" ]; then
+            echo "::error::Refusing to run extraction with ACCOUNTADMIN; use PAPERSONAR_LOADER."
+            exit 1
+          fi
+          echo "All required Snowflake secrets are present (values not printed)."
+      - name: OpenAlex incremental plan guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          uses_openalex=false
+          if [ "$SOURCE" = "all" ] || [ "$SOURCE" = "openalex" ]; then
+            uses_openalex=true
+          fi
+          if [ "$uses_openalex" = true ] && [ "$MODE" = "incremental" ] && [ "$OPENALEX_DAILY_SYNC" != "true" ]; then
+            echo "::error::OpenAlex incremental extraction uses from_updated_date, which requires an OpenAlex Member+ or Partner plan. Re-run with openalex_daily_sync=true after the plan is enabled, or use mode=full for the one-time backfill. No publication-date fallback is used."
+            exit 1
+          fi
+          echo "OpenAlex plan guard passed (mode=$MODE, source=$SOURCE)."
+      - name: Validate local configuration
+        run: python -m runner.cli check
+      - name: Extract source windows
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$SOURCE" = "all" ]; then
+            sources=(openalex crossref arxiv datacite zenodo)
+          else
+            sources=("$SOURCE")
+          fi
+
+          echo "Mode $MODE: full is the one-time 100k+ backfill; incremental uses updated-date windows."
+          for source in "${sources[@]}"; do
+            args=(--source "$source" --mode "$MODE" --json --no-task)
+            if [ -n "${FROM_DATE:-}" ]; then
+              args+=(--from "$FROM_DATE")
+            fi
+            if [ -n "${UNTIL_DATE:-}" ]; then
+              args+=(--until "$UNTIL_DATE")
+            fi
+            if [ "$FORCE" = "true" ]; then
+              args+=(--force)
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              args+=(--dry-run)
+            fi
+            echo "::group::extract $source"
+            python -m runner.cli extract "${args[@]}"
+            echo "::endgroup::"
+          done
+
+          if [ "$DRY_RUN" != "true" ]; then
+            echo "::group::trigger Snowflake ELT graph"
+            python -m runner.cli trigger --drain
+            echo "::endgroup::"
+          fi
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## PaperSonar extraction"
+            echo ""
+            echo "- Trigger: ${{ github.event_name }}"
+            echo "- Mode: $MODE"
+            echo "- Source: $SOURCE"
+            echo "- Dry run: $DRY_RUN"
+            echo "- Snowflake task: \`PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT\`"
+            echo "- Full mode is the one-time backfill; incremental uses updated-date windows only."
+            echo "- OpenAlex incremental requires Member+/Partner daily sync (from_updated_date)."
+            echo "- Task graph is triggered once with \`--drain\` after every source is LOADED."
+            echo "- Raw shards: gzip NDJSON; no Python transforms."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,149 @@
+-- =============================================================================
+-- Purpose: Deterministic SQL helper functions for DOI/title normalization and
+--          identity-key construction. Pure expressions; no external calls.
+-- Inputs: PROJECT_SILVER schema.
+-- Outputs: FN_NORMALIZE_DOI, FN_IS_VALID_DOI, FN_NORMALIZE_TITLE,
+--          FN_OUTPUT_BK, FN_VENUE_KEY, FN_OUTPUT_TYPE_KEY, FN_ACCESS_KEY,
+--          FN_SOURCE_PRIORITY.
+-- Idempotent: Yes - CREATE OR REPLACE FUNCTION is versioned by file history.
+-- Owner: PAPERSONAR_TRANSFORMER
+-- Parameters: None.
+-- Cost: Scalar CPU only; no warehouse scan on their own.
+-- =============================================================================
+-- VERIFY: Unicode normalization is intentionally conservative (lower + trim +
+-- ASCII alphanumeric collapse). Confirm with the Phase 1 data dictionary before
+-- treating title/author identity as authoritative for non-Latin scripts.
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_NORMALIZE_DOI(DOI_RAW VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  IFF(
+    DOI_RAW IS NULL OR TRIM(DOI_RAW) = '',
+    NULL,
+    NULLIF(
+      TRIM(
+        REGEXP_REPLACE(
+          REGEXP_REPLACE(LOWER(TRIM(DOI_RAW)), '^https?://(dx[.])?doi[.]org/', ''),
+          '^doi:',
+          ''
+        )
+      ),
+      ''
+    )
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_IS_VALID_DOI(DOI_NORMALIZED VARCHAR)
+RETURNS BOOLEAN
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  IFF(
+    DOI_NORMALIZED IS NULL,
+    FALSE,
+    REGEXP_LIKE(DOI_NORMALIZED, '^10[.][0-9]{4,9}/[^[:space:]]+$')
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_NORMALIZE_TITLE(TITLE_RAW VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  NULLIF(
+    TRIM(
+      REGEXP_REPLACE(
+        REGEXP_REPLACE(LOWER(COALESCE(TITLE_RAW, '')), '[^a-z0-9]+', ' '),
+        '[[:space:]]+',
+        ' '
+      )
+    ),
+    ''
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_OUTPUT_BK(
+  DOI_NORMALIZED VARCHAR,
+  ARXIV_ID VARCHAR,
+  TITLE_NORMALIZED VARCHAR,
+  PUBLICATION_YEAR NUMBER,
+  FIRST_AUTHOR_NAME VARCHAR
+)
+RETURNS VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  CASE
+    WHEN DOI_NORMALIZED IS NOT NULL THEN 'doi:' || DOI_NORMALIZED
+    WHEN ARXIV_ID IS NOT NULL AND TRIM(ARXIV_ID) <> '' THEN 'arxiv:' || LOWER(TRIM(ARXIV_ID))
+    WHEN TITLE_NORMALIZED IS NOT NULL AND TITLE_NORMALIZED <> '' THEN
+      't:' || SHA2(
+        TITLE_NORMALIZED || '|' ||
+        COALESCE(PUBLICATION_YEAR::STRING, '') || '|' ||
+        COALESCE(LOWER(TRIM(FIRST_AUTHOR_NAME)), ''),
+        256
+      )
+    ELSE NULL
+  END
+$$;
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_VENUE_KEY(VENUE_NAME VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  IFF(
+    VENUE_NAME IS NULL OR TRIM(VENUE_NAME) = '',
+    '-1',
+    LEFT(REGEXP_REPLACE(LOWER(TRIM(VENUE_NAME)), '[[:space:]]+', ' '), 300)
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_OUTPUT_TYPE_KEY(OUTPUT_TYPE VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  IFF(
+    OUTPUT_TYPE IS NULL OR TRIM(OUTPUT_TYPE) = '',
+    '-1',
+    LEFT(LOWER(TRIM(OUTPUT_TYPE)), 100)
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_ACCESS_KEY(OA_STATUS VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  IFF(
+    OA_STATUS IS NULL OR TRIM(OA_STATUS) = '',
+    '-1',
+    LEFT(LOWER(TRIM(OA_STATUS)), 50)
+  )
+$$;
+
+CREATE OR REPLACE FUNCTION PAPERSONAR.PROJECT_SILVER.FN_SOURCE_PRIORITY(SOURCE_NAME VARCHAR)
+RETURNS NUMBER
+LANGUAGE SQL
+IMMUTABLE
+AS
+$$
+  CASE UPPER(SOURCE_NAME)
+    WHEN 'OPENALEX' THEN 1
+    WHEN 'CROSSREF' THEN 2
+    WHEN 'ARXIV' THEN 3
+    WHEN 'DATACITE' THEN 4
+    WHEN 'ZENODO' THEN 5
+    ELSE 99
+  END
+$$;

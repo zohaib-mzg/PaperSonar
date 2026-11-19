@@ -1,0 +1,271 @@
+-- =============================================================================
+-- Purpose: Batch claim, stage logging and finalizer procedures for the Snowflake
+--          task graph. These procedures contain orchestration only; data
+--          transformation remains in the layer procedures.
+-- Inputs: PROJECT_AUDIT.BATCH, CURRENT_BATCH, RUN_LOG, PUBLISHED_BATCH.
+-- Outputs: SP_CLAIM_BATCH, SP_RUN_STAGE, SP_FINALIZE_BATCH.
+-- Idempotent: Yes - claim is status-guarded; stage log rows are append-only.
+-- Owner: PAPERSONAR_ADMIN
+-- Parameters: SP_RUN_STAGE takes a stage name.
+-- Cost: Metadata statements plus the invoked layer procedure.
+-- =============================================================================
+-- VERIFY: task-graph finalizer semantics and whether a failed child still runs
+-- the finalizer in the target account. The design assumes it does; task history
+-- evidence is required before acceptance.
+
+CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_AUDIT.SP_CLAIM_BATCH()
+RETURNS VARCHAR
+LANGUAGE SQL
+AS
+$$
+DECLARE
+  claimed_id VARCHAR DEFAULT NULL;
+BEGIN
+  SELECT BATCH_ID INTO :claimed_id
+  FROM PAPERSONAR.PROJECT_AUDIT.BATCH
+  WHERE STATUS = 'LOADED'
+  ORDER BY CREATED_AT, BATCH_ID
+  LIMIT 1;
+
+  IF (claimed_id IS NULL) THEN
+    DELETE FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH;
+    RETURN 'NO_BATCH';
+  END IF;
+
+  UPDATE PAPERSONAR.PROJECT_AUDIT.BATCH
+     SET STATUS = 'PROCESSING',
+         CLAIMED_AT = CURRENT_TIMESTAMP(),
+         CLAIMED_BY = CURRENT_USER(),
+         STARTED_AT = COALESCE(STARTED_AT, CURRENT_TIMESTAMP()),
+         UPDATED_AT = CURRENT_TIMESTAMP()
+   WHERE BATCH_ID = :claimed_id
+     AND STATUS = 'LOADED';
+
+  IF (SQLROWCOUNT = 0) THEN
+    RETURN 'CLAIM_RACE';
+  END IF;
+
+  DELETE FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH;
+  INSERT INTO PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH (BATCH_ID, CLAIMED_AT)
+  VALUES (:claimed_id, CURRENT_TIMESTAMP());
+
+  MERGE INTO PAPERSONAR.PROJECT_AUDIT.LINEAGE_EVENT t
+  USING (
+    SELECT
+      SHA2(:claimed_id || '|AUDIT|CLAIM', 256) AS EVENT_ID,
+      :claimed_id AS BATCH_ID,
+      'AUDIT' AS LAYER,
+      'CURRENT_BATCH' AS OBJECT_NAME,
+      'CLAIM' AS EVENT_TYPE,
+      1 AS INPUT_COUNT,
+      1 AS OUTPUT_COUNT
+  ) s
+  ON t.EVENT_ID = s.EVENT_ID
+  WHEN MATCHED THEN UPDATE SET
+    t.EVENT_AT = CURRENT_TIMESTAMP()
+  WHEN NOT MATCHED THEN INSERT
+    (EVENT_ID, BATCH_ID, LAYER, OBJECT_NAME, EVENT_TYPE, INPUT_COUNT,
+     OUTPUT_COUNT, EVENT_AT)
+    VALUES (s.EVENT_ID, s.BATCH_ID, s.LAYER, s.OBJECT_NAME, s.EVENT_TYPE,
+            s.INPUT_COUNT, s.OUTPUT_COUNT, CURRENT_TIMESTAMP());
+
+  RETURN :claimed_id;
+END;
+$$;
+
+COMMENT ON PROCEDURE PAPERSONAR.PROJECT_AUDIT.SP_CLAIM_BATCH()
+  IS 'Claim the oldest LOADED batch and publish it to CURRENT_BATCH atomically enough for one graph';
+
+CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE(P_STAGE VARCHAR)
+RETURNS VARCHAR
+LANGUAGE SQL
+AS
+$$
+DECLARE
+  batch_id   VARCHAR DEFAULT NULL;
+  run_id     VARCHAR DEFAULT NULL;
+  stage_name VARCHAR DEFAULT NULL;
+  stage_status VARCHAR DEFAULT 'RUNNING';
+BEGIN
+  SELECT BATCH_ID INTO :batch_id
+  FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH
+  LIMIT 1;
+
+  IF (batch_id IS NULL) THEN
+    RETURN 'NO_BATCH';
+  END IF;
+
+  stage_name := UPPER(TRIM(:P_STAGE));
+  run_id := SHA2(
+    :batch_id || '|' || :stage_name || '|' || CURRENT_TIMESTAMP()::STRING,
+    256
+  );
+
+  INSERT INTO PAPERSONAR.PROJECT_AUDIT.RUN_LOG (
+    RUN_ID, BATCH_ID, STAGE, STARTED_AT, STATUS, WAREHOUSE,
+    IMPLEMENTATION_VERSION
+  )
+  VALUES (
+    :run_id, :batch_id, :stage_name, CURRENT_TIMESTAMP(), 'RUNNING',
+    'WH_PAPERSONAR_ELT', 'v1'
+  );
+
+  BEGIN
+    IF (stage_name = 'COPY') THEN
+      CALL PAPERSONAR.PROJECT_STAGING.SP_COPY_BATCH();
+    ELSEIF (stage_name = 'BRONZE') THEN
+      CALL PAPERSONAR.PROJECT_BRONZE.SP_MERGE_BATCH();
+    ELSEIF (stage_name = 'SILVER') THEN
+      CALL PAPERSONAR.PROJECT_SILVER.SP_TRANSFORM_BATCH();
+    ELSEIF (stage_name = 'CATEGORIZE') THEN
+      CALL PAPERSONAR.PROJECT_STAGING.SP_CATEGORIZE_BATCH();
+    ELSEIF (stage_name = 'DIMENSIONS') THEN
+      CALL PAPERSONAR.PROJECT_DW.SP_LOAD_DIMENSIONS();
+    ELSEIF (stage_name = 'FACTS') THEN
+      CALL PAPERSONAR.PROJECT_DW.SP_LOAD_FACTS();
+    ELSEIF (stage_name = 'DQ') THEN
+      CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_DQ();
+    ELSEIF (stage_name = 'PUBLISH') THEN
+      CALL PAPERSONAR.PROJECT_REPORTING.SP_PUBLISH_BATCH();
+      IF (EXISTS (
+        SELECT 1
+        FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH
+        WHERE BATCH_ID = :batch_id
+      )) THEN
+        stage_status := 'SUCCEEDED';
+      ELSE
+        stage_status := 'BLOCKED';
+      END IF;
+    ELSE
+      stage_status := 'FAILED';
+      UPDATE PAPERSONAR.PROJECT_AUDIT.RUN_LOG
+         SET STATUS = 'FAILED',
+             FINISHED_AT = CURRENT_TIMESTAMP(),
+             ERROR_SUMMARY = 'Unknown stage: ' || COALESCE(:stage_name, 'NULL')
+       WHERE RUN_ID = :run_id;
+      RETURN 'UNKNOWN_STAGE';
+    END IF;
+  EXCEPTION
+    WHEN OTHER THEN
+      UPDATE PAPERSONAR.PROJECT_AUDIT.RUN_LOG
+         SET STATUS = 'FAILED',
+             FINISHED_AT = CURRENT_TIMESTAMP(),
+             ERROR_SUMMARY = LEFT(:SQLERRM, 2000),
+             QUERY_ID = LAST_QUERY_ID()
+       WHERE RUN_ID = :run_id;
+      UPDATE PAPERSONAR.PROJECT_AUDIT.BATCH
+         SET ERROR_SUMMARY = LEFT(:stage_name || ': ' || :SQLERRM, 2000),
+             UPDATED_AT = CURRENT_TIMESTAMP()
+       WHERE BATCH_ID = :batch_id;
+      RAISE;
+  END;
+
+  UPDATE PAPERSONAR.PROJECT_AUDIT.RUN_LOG
+     SET STATUS = :stage_status,
+         FINISHED_AT = CURRENT_TIMESTAMP(),
+         QUERY_ID = LAST_QUERY_ID()
+   WHERE RUN_ID = :run_id;
+
+  RETURN :stage_status;
+END;
+$$;
+
+COMMENT ON PROCEDURE PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE(VARCHAR)
+  IS 'Invoke one ELT stage and record run-log evidence; re-raises failures';
+
+CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_AUDIT.SP_FINALIZE_BATCH()
+RETURNS VARCHAR
+LANGUAGE SQL
+AS
+$$
+DECLARE
+  batch_id      VARCHAR DEFAULT NULL;
+  batch_status  VARCHAR DEFAULT NULL;
+  final_status  VARCHAR DEFAULT 'NO_BATCH';
+  run_id        VARCHAR DEFAULT NULL;
+BEGIN
+  SELECT BATCH_ID INTO :batch_id
+  FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH
+  LIMIT 1;
+
+  IF (batch_id IS NULL) THEN
+    run_id := SHA2('FINALIZER|NO_BATCH|' || CURRENT_TIMESTAMP()::STRING, 256);
+    INSERT INTO PAPERSONAR.PROJECT_AUDIT.RUN_LOG (
+      RUN_ID, BATCH_ID, STAGE, STARTED_AT, FINISHED_AT, STATUS,
+      IMPLEMENTATION_VERSION
+    )
+    VALUES (
+      :run_id, NULL, 'FINALIZER', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(),
+      'NO_BATCH', 'v1'
+    );
+    RETURN 'NO_BATCH';
+  END IF;
+
+  SELECT STATUS INTO :batch_status
+  FROM PAPERSONAR.PROJECT_AUDIT.BATCH
+  WHERE BATCH_ID = :batch_id;
+
+  IF (batch_status = 'PUBLISHED') THEN
+    final_status := 'PUBLISHED';
+  ELSE
+    final_status := 'FAILED';
+    UPDATE PAPERSONAR.PROJECT_AUDIT.BATCH
+       SET STATUS = 'FAILED',
+           FINISHED_AT = COALESCE(FINISHED_AT, CURRENT_TIMESTAMP()),
+           ERROR_SUMMARY = COALESCE(
+             ERROR_SUMMARY,
+             'Finalizer: batch did not reach PUBLISHED'
+           ),
+           UPDATED_AT = CURRENT_TIMESTAMP()
+     WHERE BATCH_ID = :batch_id
+       AND STATUS <> 'PUBLISHED';
+  END IF;
+
+  run_id := SHA2(:batch_id || '|FINALIZER|' || CURRENT_TIMESTAMP()::STRING, 256);
+  INSERT INTO PAPERSONAR.PROJECT_AUDIT.RUN_LOG (
+    RUN_ID, BATCH_ID, STAGE, STARTED_AT, FINISHED_AT, STATUS,
+    ROW_COUNT, IMPLEMENTATION_VERSION, ERROR_SUMMARY
+  )
+  SELECT
+    :run_id,
+    :batch_id,
+    'FINALIZER',
+    CURRENT_TIMESTAMP(),
+    CURRENT_TIMESTAMP(),
+    :final_status,
+    (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_AUDIT.DQ_RESULT
+      WHERE BATCH_ID = :batch_id AND STATUS = 'FAIL'),
+    'v1',
+    (SELECT ERROR_SUMMARY FROM PAPERSONAR.PROJECT_AUDIT.BATCH
+      WHERE BATCH_ID = :batch_id);
+
+  MERGE INTO PAPERSONAR.PROJECT_AUDIT.LINEAGE_EVENT t
+  USING (
+    SELECT
+      SHA2(:batch_id || '|AUDIT|FINALIZE', 256) AS EVENT_ID,
+      :batch_id AS BATCH_ID,
+      'AUDIT' AS LAYER,
+      'BATCH' AS OBJECT_NAME,
+      'FINALIZE' AS EVENT_TYPE,
+      1 AS INPUT_COUNT,
+      IFF(:final_status = 'PUBLISHED', 1, 0) AS OUTPUT_COUNT,
+      OBJECT_CONSTRUCT('final_status', :final_status) AS DETAILS
+  ) s
+  ON t.EVENT_ID = s.EVENT_ID
+  WHEN MATCHED THEN UPDATE SET
+    t.OUTPUT_COUNT = s.OUTPUT_COUNT,
+    t.DETAILS = s.DETAILS,
+    t.EVENT_AT = CURRENT_TIMESTAMP()
+  WHEN NOT MATCHED THEN INSERT
+    (EVENT_ID, BATCH_ID, LAYER, OBJECT_NAME, EVENT_TYPE, INPUT_COUNT,
+     OUTPUT_COUNT, DETAILS, EVENT_AT)
+    VALUES (s.EVENT_ID, s.BATCH_ID, s.LAYER, s.OBJECT_NAME, s.EVENT_TYPE,
+            s.INPUT_COUNT, s.OUTPUT_COUNT, s.DETAILS, CURRENT_TIMESTAMP());
+
+  DELETE FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH;
+  RETURN :final_status;
+END;
+$$;
+
+COMMENT ON PROCEDURE PAPERSONAR.PROJECT_AUDIT.SP_FINALIZE_BATCH()
+  IS 'Record final batch outcome, fail unpublished batches and release the claim';

@@ -1,0 +1,124 @@
+name: deploy-ci
+
+# Deploy versioned SQL objects through the internal SQL_STAGE and
+# EXECUTE IMMEDIATE FROM. This workflow never runs data extraction.
+# Manual runs require the confirmation input; pushes to sql/** deploy after
+# tests and a repository-environment approval (configure required reviewers).
+# sql/00_setup is intentionally skipped: create the database/roles and run the
+# one-time account grants manually with an administrative role. Normal CI uses
+# PAPERSONAR_ADMIN and must never use ACCOUNTADMIN.
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DEPLOY to execute DDL in Snowflake'
+        required: true
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "sql/**"
+      - "config/**"
+      - "src/runner/**"
+      - "pyproject.toml"
+      - ".github/workflows/deploy-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: papersonar-deploy
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  tests:
+    name: SQL contracts and Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Ruff
+        run: python -m ruff check src tests
+      - name: Pytest
+        run: python -m pytest tests -q
+
+  deploy:
+    name: deploy SQL
+    needs: tests
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.confirm == 'DEPLOY')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: snowflake-production
+    env:
+      PAPERSONAR_TARGET: snowflake
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
+      SNOWFLAKE_DEPLOY_ROLE: ${{ secrets.SNOWFLAKE_DEPLOY_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Check required secrets and role (names only)
+        env:
+          REQUIRED_SECRETS: >-
+            SNOWFLAKE_ACCOUNT
+            SNOWFLAKE_USER
+            SNOWFLAKE_DEPLOY_ROLE
+            SNOWFLAKE_WAREHOUSE
+            SNOWFLAKE_DATABASE
+            SNOWFLAKE_SCHEMA
+            SNOWFLAKE_PRIVATE_KEY
+        run: |
+          missing=""
+          for name in $REQUIRED_SECRETS; do
+            if [ -z "$(eval "echo \${$name:-}")" ]; then
+              missing="$missing $name"
+            fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Missing required Snowflake secrets:$missing"
+            exit 1
+          fi
+          if [ "${SNOWFLAKE_ROLE}" = "ACCOUNTADMIN" ]; then
+            echo "::error::Refusing DDL deployment with ACCOUNTADMIN."
+            exit 1
+          fi
+          echo "Secrets present; role is not ACCOUNTADMIN."
+      - name: Deploy SQL via internal stage
+        run: python -m runner.cli deploy --sql-dir sql --yes
+      - name: Deployment summary
+        if: always()
+        run: |
+          {
+            echo "## PaperSonar SQL deployment"
+            echo ""
+            echo "- Trigger: ${{ github.event_name }}"
+            echo "- Commit: ${{ github.sha }}"
+            echo "- Manual-only files (materialized views/dynamic tables) are skipped."
+            echo "- The ELT task graph is resumed automatically after the task SQL is deployed."
+            echo "- Evidence: see PROJECT_AUDIT.RUN_LOG and task history after the first graph run."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,717 @@
+-- =============================================================================
+-- Purpose: Load facts and bridges for the active batch from silver and the
+--          category staging bridge. All surrogate keys are resolved by joining
+--          dimension business keys; no Python key assignment is involved.
+-- Inputs: CURRENT_BATCH, SLV_RESEARCH_OUTPUT, SLV_SOURCE_OBSERVATION,
+--         SLV_OUTPUT_CROSSWALK, STG_OUTPUT_CATEGORY, all DIM_* tables.
+-- Outputs: four FACT_* tables, three BRIDGE_* tables, lineage event.
+-- Idempotent: Yes - batch-scoped upserts/deletes and deterministic grains.
+-- Owner: PAPERSONAR_TRANSFORMER
+-- Parameters: None.
+-- Cost: Bounded by the active batch; XS warehouse compute.
+-- =============================================================================
+
+CREATE TRANSIENT TABLE IF NOT EXISTS PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_AUTHOR (
+  BATCH_ID        VARCHAR(64)  NOT NULL,
+  OUTPUT_BK       VARCHAR(300) NOT NULL,
+  SOURCE_NAME     VARCHAR(50)  NOT NULL,
+  AUTHOR_KEY      VARCHAR(500) NOT NULL,
+  AUTHOR_POSITION NUMBER(38,0),
+  CREATED_AT      TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+)
+COMMENT = 'Output/author candidates for the active batch bridge';
+
+CREATE TRANSIENT TABLE IF NOT EXISTS PAPERSONAR.PROJECT_STAGING.STG_AUTHOR_INSTITUTION (
+  BATCH_ID         VARCHAR(64)  NOT NULL,
+  SOURCE_NAME      VARCHAR(50)  NOT NULL,
+  AUTHOR_KEY       VARCHAR(500) NOT NULL,
+  INSTITUTION_KEY  VARCHAR(500) NOT NULL,
+  CREATED_AT       TIMESTAMP_NTZ DEFAULT CURRENT_TIMESTAMP()
+)
+COMMENT = 'Author/institution candidates for the active batch bridge';
+
+CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_DW.SP_LOAD_FACTS()
+RETURNS VARCHAR
+LANGUAGE SQL
+AS
+$$
+DECLARE
+  batch_id    VARCHAR DEFAULT NULL;
+  output_keys ARRAY;
+BEGIN
+  SELECT BATCH_ID INTO :batch_id
+  FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH
+  LIMIT 1;
+
+  IF (batch_id IS NULL) THEN
+    RETURN 'NO_BATCH';
+  END IF;
+
+  SELECT ARRAY_AGG(DISTINCT OUTPUT_BK) INTO :output_keys
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK
+  WHERE BATCH_ID = :batch_id;
+  CALL PAPERSONAR.PROJECT_DW.SP_ENSURE_KEYS('OUTPUT', :output_keys);
+
+  -- Canonical output fact ----------------------------------------------------
+  MERGE INTO PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT t
+  USING (
+    SELECT
+      output_map.SURROGATE_KEY AS OUTPUT_SK,
+      r.OUTPUT_BK,
+      r.DOI_NORMALIZED,
+      COALESCE(TO_NUMBER(TO_CHAR(r.PUBLICATION_DATE, 'YYYYMMDD')), 0) AS PUBLICATION_DATE_KEY,
+      COALESCE(date_dim.DATE_SK, 0) AS PUBLICATION_DATE_SK,
+      r.PUBLICATION_YEAR,
+      PAPERSONAR.PROJECT_SILVER.FN_OUTPUT_TYPE_KEY(r.OUTPUT_TYPE) AS OUTPUT_TYPE_KEY,
+      COALESCE(type_dim.OUTPUT_TYPE_SK, 0) AS OUTPUT_TYPE_SK,
+      PAPERSONAR.PROJECT_SILVER.FN_VENUE_KEY(r.VENUE_NAME) AS VENUE_KEY,
+      COALESCE(venue_dim.VENUE_SK, 0) AS VENUE_SK,
+      PAPERSONAR.PROJECT_SILVER.FN_ACCESS_KEY(r.OA_STATUS) AS ACCESS_STATUS_KEY,
+      COALESCE(access_dim.ACCESS_STATUS_SK, 0) AS ACCESS_STATUS_SK,
+      COALESCE(source_dim.SOURCE_SK, -1) AS SOURCE_SK,
+      COALESCE(r.PRIMARY_SOURCE_NAME, 'UNKNOWN') AS SOURCE_NAME,
+      COALESCE(r.CITED_BY_COUNT, 0) AS CITED_BY_COUNT,
+      COALESCE(r.OA_IS_OA, FALSE) AS OA_IS_OA,
+      r.FIRST_SEEN_AT,
+      r.LAST_SEEN_AT
+    FROM PAPERSONAR.PROJECT_SILVER.SLV_RESEARCH_OUTPUT r
+    JOIN PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP output_map
+      ON output_map.DIMENSION_NAME = 'OUTPUT'
+     AND output_map.BUSINESS_KEY = r.OUTPUT_BK
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_DATE date_dim
+      ON date_dim.FULL_DATE = r.PUBLICATION_DATE
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_OUTPUT_TYPE type_dim
+      ON type_dim.OUTPUT_TYPE_KEY = PAPERSONAR.PROJECT_SILVER.FN_OUTPUT_TYPE_KEY(r.OUTPUT_TYPE)
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_VENUE venue_dim
+      ON venue_dim.VENUE_KEY = PAPERSONAR.PROJECT_SILVER.FN_VENUE_KEY(r.VENUE_NAME)
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_ACCESS_STATUS access_dim
+      ON access_dim.ACCESS_STATUS_KEY = PAPERSONAR.PROJECT_SILVER.FN_ACCESS_KEY(r.OA_STATUS)
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_SOURCE source_dim
+      ON source_dim.SOURCE_NAME = COALESCE(r.PRIMARY_SOURCE_NAME, 'UNKNOWN')
+    WHERE r.LAST_BATCH_ID = :batch_id
+  ) s
+  ON t.OUTPUT_SK = s.OUTPUT_SK
+  WHEN MATCHED THEN UPDATE SET
+    t.DOI_NORMALIZED = COALESCE(s.DOI_NORMALIZED, t.DOI_NORMALIZED),
+    t.PUBLICATION_DATE_KEY = s.PUBLICATION_DATE_KEY,
+    t.PUBLICATION_DATE_SK = s.PUBLICATION_DATE_SK,
+    t.PUBLICATION_YEAR = COALESCE(s.PUBLICATION_YEAR, t.PUBLICATION_YEAR),
+    t.OUTPUT_TYPE_KEY = s.OUTPUT_TYPE_KEY,
+    t.OUTPUT_TYPE_SK = s.OUTPUT_TYPE_SK,
+    t.VENUE_KEY = s.VENUE_KEY,
+    t.VENUE_SK = s.VENUE_SK,
+    t.ACCESS_STATUS_KEY = s.ACCESS_STATUS_KEY,
+    t.ACCESS_STATUS_SK = s.ACCESS_STATUS_SK,
+    t.SOURCE_SK = s.SOURCE_SK,
+    t.SOURCE_NAME = s.SOURCE_NAME,
+    t.CITED_BY_COUNT = s.CITED_BY_COUNT,
+    t.OA_IS_OA = s.OA_IS_OA,
+    t.FIRST_SEEN_AT = COALESCE(LEAST(t.FIRST_SEEN_AT, s.FIRST_SEEN_AT), s.FIRST_SEEN_AT),
+    t.LAST_SEEN_AT = COALESCE(GREATEST(t.LAST_SEEN_AT, s.LAST_SEEN_AT), s.LAST_SEEN_AT),
+    t.LAST_BATCH_ID = :batch_id
+  WHEN NOT MATCHED THEN INSERT (
+    OUTPUT_SK, OUTPUT_BK, DOI_NORMALIZED, PUBLICATION_DATE_KEY,
+    PUBLICATION_DATE_SK, PUBLICATION_YEAR, OUTPUT_TYPE_KEY, OUTPUT_TYPE_SK,
+    VENUE_KEY, VENUE_SK, ACCESS_STATUS_KEY, ACCESS_STATUS_SK, SOURCE_SK,
+    SOURCE_NAME, CITED_BY_COUNT, OA_IS_OA, FIRST_SEEN_AT, LAST_SEEN_AT,
+    LAST_BATCH_ID
+  )
+  VALUES (
+    s.OUTPUT_SK, s.OUTPUT_BK, s.DOI_NORMALIZED, s.PUBLICATION_DATE_KEY,
+    s.PUBLICATION_DATE_SK, s.PUBLICATION_YEAR, s.OUTPUT_TYPE_KEY,
+    s.OUTPUT_TYPE_SK, s.VENUE_KEY, s.VENUE_SK, s.ACCESS_STATUS_KEY,
+    s.ACCESS_STATUS_SK, s.SOURCE_SK, s.SOURCE_NAME, s.CITED_BY_COUNT,
+    s.OA_IS_OA, s.FIRST_SEEN_AT, s.LAST_SEEN_AT, :batch_id
+  );
+
+  -- Source-specific citation snapshot ---------------------------------------
+  MERGE INTO PAPERSONAR.PROJECT_DW.FACT_CITATION_SNAPSHOT t
+  USING (
+    SELECT
+      output_map.SURROGATE_KEY AS OUTPUT_SK,
+      TO_NUMBER(TO_CHAR(CURRENT_DATE(), 'YYYYMMDD')) AS SNAPSHOT_DATE_KEY,
+      COALESCE(date_dim.DATE_SK, 0) AS SNAPSHOT_DATE_SK,
+      COALESCE(source_dim.SOURCE_SK, -1) AS SOURCE_SK,
+      o.SOURCE_NAME,
+      COALESCE(o.CITED_BY_COUNT, 0) AS CITED_BY_COUNT,
+      o.OA_IS_OA,
+      o.OA_STATUS,
+      COALESCE(access_dim.ACCESS_STATUS_SK, 0) AS ACCESS_STATUS_SK
+    FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+    JOIN PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+      ON c.SOURCE_NAME = o.SOURCE_NAME
+     AND c.ENTITY_NAME = o.ENTITY_NAME
+     AND c.SOURCE_RECORD_ID = o.SOURCE_RECORD_ID
+     AND c.RECORD_HASH = o.RECORD_HASH
+     AND c.BATCH_ID = o.BATCH_ID
+    JOIN PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP output_map
+      ON output_map.DIMENSION_NAME = 'OUTPUT'
+     AND output_map.BUSINESS_KEY = c.OUTPUT_BK
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_DATE date_dim
+      ON date_dim.FULL_DATE = CURRENT_DATE()
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_ACCESS_STATUS access_dim
+      ON access_dim.ACCESS_STATUS_KEY = PAPERSONAR.PROJECT_SILVER.FN_ACCESS_KEY(o.OA_STATUS)
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_SOURCE source_dim
+      ON source_dim.SOURCE_NAME = o.SOURCE_NAME
+    WHERE o.BATCH_ID = :batch_id
+    QUALIFY ROW_NUMBER() OVER (
+      PARTITION BY c.OUTPUT_BK, o.SOURCE_NAME
+      ORDER BY o.INGESTED_AT DESC
+    ) = 1
+  ) s
+  ON t.OUTPUT_SK = s.OUTPUT_SK
+ AND t.SOURCE_NAME = s.SOURCE_NAME
+ AND t.SNAPSHOT_DATE_KEY = s.SNAPSHOT_DATE_KEY
+  WHEN MATCHED THEN UPDATE SET
+    t.CITED_BY_COUNT = s.CITED_BY_COUNT,
+    t.OA_IS_OA = s.OA_IS_OA,
+    t.OA_STATUS = s.OA_STATUS,
+    t.ACCESS_STATUS_SK = s.ACCESS_STATUS_SK,
+    t.SOURCE_SK = s.SOURCE_SK,
+    t.BATCH_ID = :batch_id
+  WHEN NOT MATCHED THEN INSERT (
+    OUTPUT_SK, SNAPSHOT_DATE_KEY, SNAPSHOT_DATE_SK, SOURCE_SK, SOURCE_NAME,
+    CITED_BY_COUNT, OA_IS_OA, OA_STATUS, ACCESS_STATUS_SK, BATCH_ID
+  )
+  VALUES (
+    s.OUTPUT_SK, s.SNAPSHOT_DATE_KEY, s.SNAPSHOT_DATE_SK, s.SOURCE_SK,
+    s.SOURCE_NAME, s.CITED_BY_COUNT, s.OA_IS_OA, s.OA_STATUS,
+    s.ACCESS_STATUS_SK, :batch_id
+  );
+
+  -- Source observation fact --------------------------------------------------
+  MERGE INTO PAPERSONAR.PROJECT_DW.FACT_OUTPUT_SOURCE_OBSERVATION t
+  USING (
+    SELECT
+      output_map.SURROGATE_KEY AS OUTPUT_SK,
+      COALESCE(source_dim.SOURCE_SK, -1) AS SOURCE_SK,
+      c.SOURCE_NAME,
+      c.ENTITY_NAME,
+      c.SOURCE_RECORD_ID,
+      c.RECORD_HASH,
+      c.BATCH_ID,
+      o.INGESTED_AT
+    FROM PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+    JOIN PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+      ON o.SOURCE_NAME = c.SOURCE_NAME
+     AND o.ENTITY_NAME = c.ENTITY_NAME
+     AND o.SOURCE_RECORD_ID = c.SOURCE_RECORD_ID
+     AND c.RECORD_HASH = o.RECORD_HASH
+     AND c.BATCH_ID = o.BATCH_ID
+    JOIN PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP output_map
+      ON output_map.DIMENSION_NAME = 'OUTPUT'
+     AND output_map.BUSINESS_KEY = c.OUTPUT_BK
+    LEFT JOIN PAPERSONAR.PROJECT_DW.DIM_SOURCE source_dim
+      ON source_dim.SOURCE_NAME = c.SOURCE_NAME
+    WHERE c.BATCH_ID = :batch_id
+  ) s
+  ON t.OUTPUT_SK = s.OUTPUT_SK
+ AND t.SOURCE_NAME = s.SOURCE_NAME
+ AND t.ENTITY_NAME = s.ENTITY_NAME
+ AND t.SOURCE_RECORD_ID = s.SOURCE_RECORD_ID
+ AND t.RECORD_HASH = s.RECORD_HASH
+  WHEN NOT MATCHED THEN INSERT (
+    OUTPUT_SK, SOURCE_SK, SOURCE_NAME, ENTITY_NAME, SOURCE_RECORD_ID,
+    RECORD_HASH, BATCH_ID, INGESTED_AT
+  )
+  VALUES (
+    s.OUTPUT_SK, s.SOURCE_SK, s.SOURCE_NAME, s.ENTITY_NAME,
+    s.SOURCE_RECORD_ID, s.RECORD_HASH, s.BATCH_ID, s.INGESTED_AT
+  );
+
+  -- Output/author staging ----------------------------------------------------
+  DELETE FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_AUTHOR WHERE BATCH_ID = :batch_id;
+  INSERT INTO PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_AUTHOR (
+    BATCH_ID, OUTPUT_BK, SOURCE_NAME, AUTHOR_KEY, AUTHOR_POSITION
+  )
+  SELECT
+    :batch_id,
+    c.OUTPUT_BK,
+    o.SOURCE_NAME,
+    CASE
+      WHEN NULLIF(TRIM(author.value:author.orcid::STRING), '') IS NOT NULL
+        THEN 'orcid:' || LOWER(REGEXP_REPLACE(
+          author.value:author.orcid::STRING, '^https?://orcid[.]org/', ''
+        ))
+      WHEN NULLIF(TRIM(author.value:author.id::STRING), '') IS NOT NULL
+        THEN 'openalex:' || REGEXP_REPLACE(
+          author.value:author.id::STRING, '^https?://openalex[.]org/', ''
+        )
+      ELSE 'openalex:name:' || SHA2(
+        LOWER(TRIM(author.value:author.display_name::STRING)), 256
+      )
+    END,
+    author.index + 1
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  JOIN PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+    ON c.SOURCE_NAME = o.SOURCE_NAME
+   AND c.ENTITY_NAME = o.ENTITY_NAME
+   AND c.SOURCE_RECORD_ID = o.SOURCE_RECORD_ID
+   AND c.RECORD_HASH = o.RECORD_HASH
+   AND c.BATCH_ID = o.BATCH_ID
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'OPENALEX'
+    AND author.value:author.display_name::STRING IS NOT NULL
+
+  UNION ALL
+
+  SELECT
+    :batch_id,
+    c.OUTPUT_BK,
+    o.SOURCE_NAME,
+    CASE
+      WHEN NULLIF(TRIM(author.value:ORCID::STRING), '') IS NOT NULL
+        THEN 'orcid:' || LOWER(REGEXP_REPLACE(
+          author.value:ORCID::STRING, '^https?://orcid[.]org/', ''
+        ))
+      ELSE 'crossref:name:' || SHA2(
+        LOWER(TRIM(
+          COALESCE(author.value:given::STRING, '') || ' ' ||
+          COALESCE(author.value:family::STRING, '')
+        )),
+        256
+      )
+    END,
+    author.index + 1
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  JOIN PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+    ON c.SOURCE_NAME = o.SOURCE_NAME
+   AND c.ENTITY_NAME = o.ENTITY_NAME
+   AND c.SOURCE_RECORD_ID = o.SOURCE_RECORD_ID
+   AND c.RECORD_HASH = o.RECORD_HASH
+   AND c.BATCH_ID = o.BATCH_ID
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'CROSSREF'
+
+  UNION ALL
+
+  SELECT
+    :batch_id,
+    c.OUTPUT_BK,
+    o.SOURCE_NAME,
+    CASE
+      WHEN author.value:nameIdentifiers[0].nameIdentifierScheme::STRING = 'ORCID'
+       AND NULLIF(TRIM(author.value:nameIdentifiers[0].nameIdentifier::STRING), '') IS NOT NULL
+        THEN 'orcid:' || LOWER(REGEXP_REPLACE(
+          author.value:nameIdentifiers[0].nameIdentifier::STRING,
+          '^https?://orcid[.]org/', ''
+        ))
+      ELSE 'datacite:name:' || SHA2(
+        LOWER(TRIM(COALESCE(author.value:name::STRING, ''))), 256
+      )
+    END,
+    author.index + 1
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  JOIN PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+    ON c.SOURCE_NAME = o.SOURCE_NAME
+   AND c.ENTITY_NAME = o.ENTITY_NAME
+   AND c.SOURCE_RECORD_ID = o.SOURCE_RECORD_ID
+   AND c.RECORD_HASH = o.RECORD_HASH
+   AND c.BATCH_ID = o.BATCH_ID
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'DATACITE'
+    AND author.value:name::STRING IS NOT NULL
+
+  UNION ALL
+
+  SELECT
+    :batch_id,
+    c.OUTPUT_BK,
+    o.SOURCE_NAME,
+    'arxiv:name:' || SHA2(LOWER(TRIM(author.value::STRING)), 256),
+    author.index + 1
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  JOIN PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+    ON c.SOURCE_NAME = o.SOURCE_NAME
+   AND c.ENTITY_NAME = o.ENTITY_NAME
+   AND c.SOURCE_RECORD_ID = o.SOURCE_RECORD_ID
+   AND c.RECORD_HASH = o.RECORD_HASH
+   AND c.BATCH_ID = o.BATCH_ID
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'ARXIV'
+    AND TRIM(COALESCE(author.value::STRING, '')) <> ''
+
+  UNION ALL
+
+  SELECT
+    :batch_id,
+    c.OUTPUT_BK,
+    o.SOURCE_NAME,
+    'zenodo:name:' || SHA2(LOWER(TRIM(author.value::STRING)), 256),
+    author.index + 1
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  JOIN PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+    ON c.SOURCE_NAME = o.SOURCE_NAME
+   AND c.ENTITY_NAME = o.ENTITY_NAME
+   AND c.SOURCE_RECORD_ID = o.SOURCE_RECORD_ID
+   AND c.RECORD_HASH = o.RECORD_HASH
+   AND c.BATCH_ID = o.BATCH_ID
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'ZENODO'
+    AND TRIM(COALESCE(author.value::STRING, '')) <> '';
+
+  DELETE FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_AUTHOR
+  WHERE OUTPUT_SK IN (
+    SELECT mapping.SURROGATE_KEY
+    FROM PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP mapping
+    WHERE mapping.DIMENSION_NAME = 'OUTPUT'
+      AND mapping.BUSINESS_KEY IN (
+        SELECT OUTPUT_BK
+        FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_AUTHOR
+        WHERE BATCH_ID = :batch_id
+      )
+  );
+
+  INSERT INTO PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_AUTHOR (
+    OUTPUT_SK, AUTHOR_SK, AUTHOR_KEY, AUTHOR_POSITION, SOURCE_NAME, BATCH_ID
+  )
+  SELECT
+    output_map.SURROGATE_KEY,
+    author_dim.AUTHOR_SK,
+    candidate.AUTHOR_KEY,
+    candidate.AUTHOR_POSITION,
+    candidate.SOURCE_NAME,
+    :batch_id
+  FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_AUTHOR candidate
+  JOIN PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP output_map
+    ON output_map.DIMENSION_NAME = 'OUTPUT'
+   AND output_map.BUSINESS_KEY = candidate.OUTPUT_BK
+  JOIN PAPERSONAR.PROJECT_DW.DIM_AUTHOR author_dim
+    ON author_dim.AUTHOR_KEY = candidate.AUTHOR_KEY
+   AND author_dim.IS_CURRENT
+  WHERE candidate.BATCH_ID = :batch_id
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY output_map.SURROGATE_KEY, candidate.AUTHOR_KEY
+    ORDER BY candidate.AUTHOR_POSITION, candidate.SOURCE_NAME
+  ) = 1;
+
+  -- Author/institution staging ----------------------------------------------
+  DELETE FROM PAPERSONAR.PROJECT_STAGING.STG_AUTHOR_INSTITUTION WHERE BATCH_ID = :batch_id;
+  INSERT INTO PAPERSONAR.PROJECT_STAGING.STG_AUTHOR_INSTITUTION (
+    BATCH_ID, SOURCE_NAME, AUTHOR_KEY, INSTITUTION_KEY
+  )
+  SELECT DISTINCT
+    :batch_id,
+    o.SOURCE_NAME,
+    CASE
+      WHEN NULLIF(TRIM(author.value:author.orcid::STRING), '') IS NOT NULL
+        THEN 'orcid:' || LOWER(REGEXP_REPLACE(
+          author.value:author.orcid::STRING, '^https?://orcid[.]org/', ''
+        ))
+      WHEN NULLIF(TRIM(author.value:author.id::STRING), '') IS NOT NULL
+        THEN 'openalex:' || REGEXP_REPLACE(
+          author.value:author.id::STRING, '^https?://openalex[.]org/', ''
+        )
+      ELSE 'openalex:name:' || SHA2(
+        LOWER(TRIM(author.value:author.display_name::STRING)), 256
+      )
+    END,
+    CASE
+      WHEN institution.value:id IS NOT NULL AND TRIM(institution.value:id::STRING) <> ''
+        THEN 'openalex:' || REGEXP_REPLACE(
+          institution.value:id::STRING, '^https?://openalex[.]org/', ''
+        )
+      ELSE 'openalex:name:' || SHA2(
+        LOWER(TRIM(COALESCE(institution.value:display_name::STRING, ''))), 256
+      )
+    END
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  CROSS JOIN LATERAL FLATTEN(input => author.value:institutions) institution
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'OPENALEX'
+    AND COALESCE(institution.value:display_name::STRING, institution.value:name::STRING) IS NOT NULL
+
+  UNION ALL
+
+  SELECT DISTINCT
+    :batch_id,
+    o.SOURCE_NAME,
+    CASE
+      WHEN NULLIF(TRIM(author.value:ORCID::STRING), '') IS NOT NULL
+        THEN 'orcid:' || LOWER(REGEXP_REPLACE(
+          author.value:ORCID::STRING, '^https?://orcid[.]org/', ''
+        ))
+      ELSE 'crossref:name:' || SHA2(
+        LOWER(TRIM(
+          COALESCE(author.value:given::STRING, '') || ' ' ||
+          COALESCE(author.value:family::STRING, '')
+        )),
+        256
+      )
+    END,
+    LOWER(o.SOURCE_NAME) || ':name:' || SHA2(
+      LOWER(TRIM(COALESCE(institution.value:name::STRING, institution.value::STRING, ''))),
+      256
+    )
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  CROSS JOIN LATERAL FLATTEN(input => author.value:affiliation) institution
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'CROSSREF'
+    AND COALESCE(institution.value:name::STRING, institution.value::STRING) IS NOT NULL
+
+  UNION ALL
+
+  SELECT DISTINCT
+    :batch_id,
+    o.SOURCE_NAME,
+    CASE
+      WHEN author.value:nameIdentifiers[0].nameIdentifierScheme::STRING = 'ORCID'
+       AND NULLIF(TRIM(author.value:nameIdentifiers[0].nameIdentifier::STRING), '') IS NOT NULL
+        THEN 'orcid:' || LOWER(REGEXP_REPLACE(
+          author.value:nameIdentifiers[0].nameIdentifier::STRING,
+          '^https?://orcid[.]org/', ''
+        ))
+      ELSE 'datacite:name:' || SHA2(
+        LOWER(TRIM(COALESCE(author.value:name::STRING, ''))), 256
+      )
+    END,
+    'datacite:name:' || SHA2(
+      LOWER(TRIM(COALESCE(institution.value:name::STRING, institution.value::STRING, ''))),
+      256
+    )
+  FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+  CROSS JOIN LATERAL FLATTEN(input => o.AUTHORS) author
+  CROSS JOIN LATERAL FLATTEN(input => author.value:affiliation) institution
+  WHERE o.BATCH_ID = :batch_id
+    AND o.SOURCE_NAME = 'DATACITE'
+    AND COALESCE(institution.value:name::STRING, institution.value::STRING) IS NOT NULL;
+
+  DELETE FROM PAPERSONAR.PROJECT_DW.BRIDGE_AUTHOR_INSTITUTION
+  WHERE AUTHOR_KEY IN (
+    SELECT AUTHOR_KEY
+    FROM PAPERSONAR.PROJECT_STAGING.STG_AUTHOR_INSTITUTION
+    WHERE BATCH_ID = :batch_id
+  );
+
+  INSERT INTO PAPERSONAR.PROJECT_DW.BRIDGE_AUTHOR_INSTITUTION (
+    AUTHOR_SK, INSTITUTION_SK, AUTHOR_KEY, INSTITUTION_KEY, BATCH_ID
+  )
+  SELECT DISTINCT
+    author_dim.AUTHOR_SK,
+    institution_dim.INSTITUTION_SK,
+    candidate.AUTHOR_KEY,
+    candidate.INSTITUTION_KEY,
+    :batch_id
+  FROM PAPERSONAR.PROJECT_STAGING.STG_AUTHOR_INSTITUTION candidate
+  JOIN PAPERSONAR.PROJECT_DW.DIM_AUTHOR author_dim
+    ON author_dim.AUTHOR_KEY = candidate.AUTHOR_KEY
+   AND author_dim.IS_CURRENT
+  JOIN PAPERSONAR.PROJECT_DW.DIM_INSTITUTION institution_dim
+    ON institution_dim.INSTITUTION_KEY = candidate.INSTITUTION_KEY
+  WHERE candidate.BATCH_ID = :batch_id;
+
+  -- Category bridge ----------------------------------------------------------
+  DELETE FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY
+  WHERE OUTPUT_SK IN (
+    SELECT mapping.SURROGATE_KEY
+    FROM PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP mapping
+    WHERE mapping.DIMENSION_NAME = 'OUTPUT'
+      AND mapping.BUSINESS_KEY IN (
+        SELECT OUTPUT_BK
+        FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_CATEGORY
+        WHERE BATCH_ID = :batch_id
+      )
+  );
+
+  INSERT INTO PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY (
+    OUTPUT_SK, CATEGORY_SK, CATEGORY_KEY, SCORE, IS_PRIMARY, CATEGORY_RANK,
+    METHOD, TAXONOMY_VERSION, BATCH_ID
+  )
+  SELECT DISTINCT
+    output_map.SURROGATE_KEY,
+    category_dim.CATEGORY_SK,
+    candidate.CATEGORY_KEY,
+    candidate.SCORE,
+    candidate.IS_PRIMARY,
+    candidate.CATEGORY_RANK,
+    candidate.METHOD,
+    candidate.TAXONOMY_VERSION,
+    :batch_id
+  FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_CATEGORY candidate
+  JOIN PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP output_map
+    ON output_map.DIMENSION_NAME = 'OUTPUT'
+   AND output_map.BUSINESS_KEY = candidate.OUTPUT_BK
+  JOIN PAPERSONAR.PROJECT_DW.DIM_CATEGORY category_dim
+    ON category_dim.CATEGORY_KEY = candidate.CATEGORY_KEY
+  WHERE candidate.BATCH_ID = :batch_id;
+
+  -- Output relations ---------------------------------------------------------
+  DELETE FROM PAPERSONAR.PROJECT_DW.FACT_OUTPUT_RELATION WHERE BATCH_ID = :batch_id;
+
+  INSERT INTO PAPERSONAR.PROJECT_DW.FACT_OUTPUT_RELATION (
+    OUTPUT_SK, RELATION_TYPE, TARGET_DOI, TARGET_PROVIDER_ID, TARGET_OUTPUT_SK,
+    SOURCE_NAME, BATCH_ID
+  )
+  SELECT DISTINCT
+    output_map.SURROGATE_KEY,
+    'REFERENCES',
+    relation.TARGET_DOI,
+    relation.TARGET_PROVIDER_ID,
+    target_map.SURROGATE_KEY,
+    relation.SOURCE_NAME,
+    :batch_id
+  FROM (
+    SELECT
+      o.SOURCE_NAME,
+      o.ENTITY_NAME,
+      o.SOURCE_RECORD_ID,
+      o.RECORD_HASH,
+      PAPERSONAR.PROJECT_SILVER.FN_NORMALIZE_DOI(reference.value:DOI::STRING) AS TARGET_DOI,
+      NULL AS TARGET_PROVIDER_ID
+    FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+    CROSS JOIN LATERAL FLATTEN(input => o.REFERENCES_JSON) reference
+    WHERE o.BATCH_ID = :batch_id
+      AND o.SOURCE_NAME = 'CROSSREF'
+      AND reference.value:DOI IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+      o.SOURCE_NAME,
+      o.ENTITY_NAME,
+      o.SOURCE_RECORD_ID,
+      o.RECORD_HASH,
+      PAPERSONAR.PROJECT_SILVER.FN_NORMALIZE_DOI(
+        reference.value:relatedIdentifier::STRING
+      ) AS TARGET_DOI,
+      NULL
+    FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+    CROSS JOIN LATERAL FLATTEN(input => o.REFERENCES_JSON) reference
+    WHERE o.BATCH_ID = :batch_id
+      AND o.SOURCE_NAME = 'DATACITE'
+      AND reference.value:relatedIdentifierType::STRING = 'DOI'
+      AND reference.value:relatedIdentifier IS NOT NULL
+
+    UNION ALL
+
+    SELECT
+      o.SOURCE_NAME,
+      o.ENTITY_NAME,
+      o.SOURCE_RECORD_ID,
+      o.RECORD_HASH,
+      NULL,
+      REGEXP_REPLACE(reference.value::STRING, '^https?://openalex[.]org/', '')
+    FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o
+    CROSS JOIN LATERAL FLATTEN(input => o.REFERENCES_JSON) reference
+    WHERE o.BATCH_ID = :batch_id
+      AND o.SOURCE_NAME = 'OPENALEX'
+      AND reference.value IS NOT NULL
+  ) relation
+  JOIN PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
+    ON c.SOURCE_NAME = relation.SOURCE_NAME
+   AND c.ENTITY_NAME = relation.ENTITY_NAME
+   AND c.SOURCE_RECORD_ID = relation.SOURCE_RECORD_ID
+   AND c.RECORD_HASH = relation.RECORD_HASH
+   AND c.BATCH_ID = :batch_id
+  JOIN PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP output_map
+    ON output_map.DIMENSION_NAME = 'OUTPUT'
+   AND output_map.BUSINESS_KEY = c.OUTPUT_BK
+  LEFT JOIN (
+    SELECT DISTINCT OUTPUT_BK
+    FROM PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK
+  ) known_target
+    ON known_target.OUTPUT_BK = 'doi:' || relation.TARGET_DOI
+  LEFT JOIN PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP target_map
+    ON target_map.DIMENSION_NAME = 'OUTPUT'
+   AND target_map.BUSINESS_KEY = known_target.OUTPUT_BK
+  WHERE (relation.TARGET_DOI IS NOT NULL OR relation.TARGET_PROVIDER_ID IS NOT NULL)
+    AND (relation.TARGET_DOI IS NULL OR relation.TARGET_DOI <> c.OUTPUT_BK);
+
+  MERGE INTO PAPERSONAR.PROJECT_AUDIT.LINEAGE_EVENT t
+  USING (
+    SELECT
+      SHA2(:batch_id || '|DW|FACT', 256) AS EVENT_ID,
+      :batch_id AS BATCH_ID,
+      'DW' AS LAYER,
+      'FACT_RESEARCH_OUTPUT' AS OBJECT_NAME,
+      'LOAD' AS EVENT_TYPE,
+      (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_SILVER.SLV_RESEARCH_OUTPUT
+        WHERE LAST_BATCH_ID = :batch_id) AS INPUT_COUNT,
+      (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT
+        WHERE LAST_BATCH_ID = :batch_id) AS OUTPUT_COUNT
+  ) s
+  ON t.EVENT_ID = s.EVENT_ID
+  WHEN MATCHED THEN UPDATE SET
+    t.INPUT_COUNT = s.INPUT_COUNT,
+    t.OUTPUT_COUNT = s.OUTPUT_COUNT,
+    t.EVENT_AT = CURRENT_TIMESTAMP()
+  WHEN NOT MATCHED THEN INSERT
+    (EVENT_ID, BATCH_ID, LAYER, OBJECT_NAME, EVENT_TYPE, INPUT_COUNT,
+     OUTPUT_COUNT, EVENT_AT)
+    VALUES (s.EVENT_ID, s.BATCH_ID, s.LAYER, s.OBJECT_NAME, s.EVENT_TYPE,
+            s.INPUT_COUNT, s.OUTPUT_COUNT, CURRENT_TIMESTAMP());
+
+  RETURN 'FACTS_OK';
+END;
+$$;
+
+COMMENT ON PROCEDURE PAPERSONAR.PROJECT_DW.SP_LOAD_FACTS()
+  IS 'Load facts and bridges for the active batch with dimension key resolution';
+
+CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_DW.SP_REPAIR_ORPHANS()
+RETURNS VARCHAR
+LANGUAGE SQL
+AS
+$$
+DECLARE
+  repaired_rows NUMBER DEFAULT 0;
+BEGIN
+  UPDATE PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT f
+     SET PUBLICATION_DATE_KEY = COALESCE(
+           (SELECT TO_NUMBER(TO_CHAR(d.FULL_DATE, 'YYYYMMDD'))
+            FROM PAPERSONAR.PROJECT_DW.DIM_DATE d
+            WHERE d.DATE_SK = f.PUBLICATION_DATE_SK),
+           f.PUBLICATION_DATE_KEY
+         )
+   WHERE f.PUBLICATION_DATE_SK <> 0 AND f.PUBLICATION_DATE_KEY = 0;
+  repaired_rows := repaired_rows + SQLROWCOUNT;
+
+  UPDATE PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT f
+     SET PUBLICATION_DATE_SK = COALESCE(
+           (SELECT d.DATE_SK FROM PAPERSONAR.PROJECT_DW.DIM_DATE d
+            WHERE d.DATE_KEY = f.PUBLICATION_DATE_KEY),
+           0
+         )
+   WHERE f.PUBLICATION_DATE_SK = 0 AND f.PUBLICATION_DATE_KEY <> 0;
+  repaired_rows := repaired_rows + SQLROWCOUNT;
+
+  UPDATE PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT f
+     SET OUTPUT_TYPE_SK = COALESCE(
+           (SELECT d.OUTPUT_TYPE_SK FROM PAPERSONAR.PROJECT_DW.DIM_OUTPUT_TYPE d
+            WHERE d.OUTPUT_TYPE_KEY = f.OUTPUT_TYPE_KEY),
+           0
+         )
+   WHERE f.OUTPUT_TYPE_SK = 0;
+  repaired_rows := repaired_rows + SQLROWCOUNT;
+
+  UPDATE PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT f
+     SET VENUE_SK = COALESCE(
+           (SELECT d.VENUE_SK FROM PAPERSONAR.PROJECT_DW.DIM_VENUE d
+            WHERE d.VENUE_KEY = f.VENUE_KEY),
+           0
+         )
+   WHERE f.VENUE_SK = 0;
+  repaired_rows := repaired_rows + SQLROWCOUNT;
+
+  UPDATE PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT f
+     SET ACCESS_STATUS_SK = COALESCE(
+           (SELECT d.ACCESS_STATUS_SK FROM PAPERSONAR.PROJECT_DW.DIM_ACCESS_STATUS d
+            WHERE d.ACCESS_STATUS_KEY = f.ACCESS_STATUS_KEY),
+           0
+         )
+   WHERE f.ACCESS_STATUS_SK = 0;
+  repaired_rows := repaired_rows + SQLROWCOUNT;
+
+  RETURN 'REPAIRED:' || repaired_rows;
+END;
+$$;
+
+COMMENT ON PROCEDURE PAPERSONAR.PROJECT_DW.SP_REPAIR_ORPHANS()
+  IS 'Repair late-arriving dimension keys; never deletes or guesses business keys';

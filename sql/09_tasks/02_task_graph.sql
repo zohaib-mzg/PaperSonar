@@ -1,0 +1,93 @@
+-- =============================================================================
+-- Purpose: Create the Snowflake task graph that runs COPY, bronze, silver,
+--          categorization, dimensions, facts, DQ, publication and the finalizer.
+-- Inputs: Procedures from every layer and PROJECT_AUDIT control tables.
+-- Outputs: TASK_ELT_ROOT plus eight child tasks and TASK_ELT_FINALIZER.
+-- Idempotent: Yes - CREATE OR REPLACE TASK, review graph dependencies on redeploy.
+-- Owner: PAPERSONAR_ADMIN (tasks execute as owner)
+-- Parameters: None.
+-- Cost: One XS warehouse per task, root scheduled daily at 03:00 UTC. GitHub
+--       triggers the same graph immediately after a batch reaches LOADED.
+-- =============================================================================
+-- VERIFY: confirm CREATE OR REPLACE TASK rebuilds child dependencies, that
+-- FINALIZE runs after failed children, and that EXECUTE TASK works for the loader.
+-- CREATE OR REPLACE TASK leaves every task SUSPENDED; runner.cli deploy resumes
+-- the graph after this file is applied (root SUSPEND, all children RESUME, root
+-- RESUME). For manual recovery, resume children before the scheduled root.
+-- Pause the graph with ALTER TASK ... TASK_ELT_ROOT SUSPEND.
+-- Root eligibility is LOADED only. Claiming changes the row to PROCESSING before
+-- any child runs.
+-- NOTE: AFTER and FINALIZE come after parameters and COMMENT, before AS.
+-- NOTE: SUSPEND_TASK_AFTER_NUM_FAILURES can only be set on the root task.
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  SCHEDULE = 'USING CRON 0 3 * * * UTC'
+  ALLOW_OVERLAPPING_EXECUTION = FALSE
+  USER_TASK_TIMEOUT_MS = 1800000
+  SUSPEND_TASK_AFTER_NUM_FAILURES = 5
+  COMMENT = 'PaperSonar root: claim the oldest LOADED batch'
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_CLAIM_BATCH();
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_COPY
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'COPY registered raw files into staging and reconcile counts'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('COPY');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_BRONZE
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Upsert the batch into current-state bronze by record id'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_COPY
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('BRONZE');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_SILVER
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Typed silver projection, quarantine and identity crosswalk'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_BRONZE
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('SILVER');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_CATEGORIZE
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Deterministic taxonomy scoring and auditable overrides'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_SILVER
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('CATEGORIZE');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_DIMENSIONS
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Load conformed dimensions and SCD2 authors'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_CATEGORIZE
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('DIMENSIONS');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_FACTS
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Load facts and bridges with dimension key resolution'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_DIMENSIONS
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('FACTS');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_DQ
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Run the 12-rule DQ gate and record every observed value'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_FACTS
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('DQ');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_PUBLISH
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Fail-closed publication and watermark advancement'
+  AFTER PAPERSONAR.PROJECT_AUDIT.TASK_ELT_DQ
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('PUBLISH');
+
+CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_FINALIZER
+  WAREHOUSE = WH_PAPERSONAR_ELT
+  USER_TASK_TIMEOUT_MS = 1800000
+  COMMENT = 'Record the final outcome and release the batch claim'
+  FINALIZE = PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT
+AS CALL PAPERSONAR.PROJECT_AUDIT.SP_FINALIZE_BATCH();
