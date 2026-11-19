@@ -129,8 +129,7 @@ def test_dq_rules_match_config_and_procedure() -> None:
 def test_task_graph_order_and_finalizer() -> None:
     task_sql = _read(SQL_ROOT / "09_tasks" / "02_task_graph.sql")
     assert "TASK_ELT_ROOT" in task_sql
-    assert "SCHEDULE" in task_sql
-    assert "ALLOW_OVERLAPPING_EXECUTION = FALSE" in task_sql
+    assert "OVERLAP_POLICY = NO_OVERLAP" in task_sql
 
     stage_order = [
         "TASK_ELT_COPY",
@@ -206,3 +205,11 @@ def test_author_keys_are_json_null_safe() -> None:
             assert unsafe not in sql, f"{relative}: unsafe VARIANT check {unsafe!r}"
         for safe in safe_checks:
             assert safe in sql, f"{relative}: missing JSON-null-safe check {safe!r}"
+
+
+def test_elt_root_has_no_snowflake_cron_schedule() -> None:
+    """GitHub Actions owns scheduling; the Snowflake root is on-demand only."""
+    executable = _strip_line_comments(_read(SQL_ROOT / "09_tasks" / "02_task_graph.sql"))
+    assert "SCHEDULE" not in executable
+    assert "USING CRON" not in executable
+    assert "OVERLAP_POLICY = NO_OVERLAP" in executable

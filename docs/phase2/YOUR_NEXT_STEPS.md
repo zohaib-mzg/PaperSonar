@@ -165,10 +165,12 @@ SHOW TASKS IN SCHEMA PAPERSONAR.PROJECT_AUDIT;
 
 Every task should show `state = started`. If you must resume manually, use the
 same order: root `SUSPEND`, all children `RESUME`, root `RESUME`. Never resume the
-scheduled root while a child is still suspended.
+root while a child is still suspended.
 
-The root task is scheduled daily at `03:00 UTC`. GitHub triggers it once with
-`python -m runner.cli trigger --drain` after every source reaches `LOADED`.
+**GitHub Actions is the only scheduler.** The Snowflake root has no cron schedule
+and runs only through `EXECUTE TASK`. GitHub extracts at `02:30 UTC` and calls
+`python -m runner.cli trigger --drain` once after every source reaches `LOADED`.
+Do not add a second Snowflake schedule.
 
 ---
 
@@ -209,6 +211,14 @@ Add these repository secrets:
 | `SNOWFLAKE_DEPLOY_ROLE` | `PAPERSONAR_ADMIN` for the deployment workflow |
 | `OPENALEX_API_KEY` | OpenAlex key |
 | `CROSSREF_CONTACT_EMAIL` | Contact email for Crossref etiquette |
+
+Add this repository **variable** only after OpenAlex Member+/Partner daily sync is active:
+
+| Variable | Value |
+|---|---|
+| `OPENALEX_DAILY_SYNC` | `true` |
+
+Until then leave it unset or `false`: scheduled all-source runs skip OpenAlex with a warning, and an explicit `source=openalex` incremental run fails closed. No publication-date fallback is used.
 
 Create the environment **`snowflake-production`** and add required reviewers. The deploy workflow uses this environment for approval gating.
 
@@ -353,8 +363,8 @@ Only do this after the Snowflake work is accepted, or if you are explicitly prep
 - [ ] Get explicit authorization for `--force-with-lease`.
 - [ ] Never use plain `--force`.
 
-The implementation is committed and pushed to `origin/phase2` (`9f9cf0f`).
-No tag, backup branch, force push, or merge to `main` has been performed.
+The implementation is committed and pushed to `origin/phase2`; see `git log` for
+the current commit. No tag, backup branch, force push, or merge to `main` has been performed.
 
 ---
 

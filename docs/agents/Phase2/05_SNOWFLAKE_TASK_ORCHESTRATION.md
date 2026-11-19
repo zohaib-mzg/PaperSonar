@@ -1,7 +1,7 @@
 # Snowflake Task-Graph Orchestration
 
 ## Binding decision
-All transformations run inside Snowflake through the `PAPERSONAR.PROJECT_AUDIT.TASK_ELT_*` graph. GitHub Actions extracts and uploads; it is not a transformation scheduler. SQL objects are deployed from the internal `SQL_STAGE` with `EXECUTE IMMEDIATE FROM`; each task calls its stage procedure directly (for example, `SP_RUN_STAGE('FACTS')`). No Git repository stage is required.
+All transformations run inside Snowflake through the `PAPERSONAR.PROJECT_AUDIT.TASK_ELT_*` graph. GitHub Actions extracts, uploads, and is the only scheduler: it calls the Snowflake root with `python -m runner.cli trigger --drain` after all source batches are `LOADED`. The Snowflake root has no `SCHEDULE`; it runs only via `EXECUTE TASK`. SQL objects are deployed from the internal `SQL_STAGE` with `EXECUTE IMMEDIATE FROM`; each task calls its stage procedure directly (for example, `SP_RUN_STAGE('FACTS')`). No Git repository stage is required.
 
 `VERIFY:` the exact syntax and privilege model for internal-stage `PUT` plus `EXECUTE IMMEDIATE FROM`, and confirm `EXECUTE TASK` for the loader role. Official docs: https://docs.snowflake.com/en/sql-reference/sql/execute-immediate-from and https://docs.snowflake.com/en/sql-reference/sql/execute-task.
 
@@ -29,7 +29,7 @@ Use separate tasks or clearly logged stages for each node. Finalizer must run af
 Only batches with status `LOADED` are eligible. Claim a batch safely before processing so overlapping roots do not process it concurrently. A claim lease/heartbeat or equivalent recovery design must handle abandoned processing. Root execution must be safe when no eligible batch exists.
 
 ## Task definitions
-Specify schedule and dependencies explicitly. Use a low-frequency schedule during development (manual only or daily after smoke tests); increase only after cost and freshness requirements are known. Do not schedule every source independently inside Snowflake when GitHub is the extractor.
+Dependencies are explicit with `AFTER`; the root has no Snowflake `SCHEDULE`. GitHub owns freshness via its 02:30 UTC cron, and `trigger --drain` calls the root once per loaded batch. Do not add a second Snowflake cron or schedule sources independently inside Snowflake.
 
 Every task records run ID, batch ID, start/end, query ID if available, row counts, status, and error details. Configure bounded retries where supported and `SUSPEND_TASK_AFTER_NUM_FAILURES` appropriately. `VERIFY:` exact task parameter names, retry semantics, graph finalizer patterns, and whether root `EXECUTE TASK` is supported in the selected configuration.
 
@@ -58,9 +58,9 @@ Default: user-managed XS warehouse with 60-second auto-suspend. Serverless tasks
 2. `ALTER TASK` ... `RESUME` for every child task
 3. `ALTER TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT RESUME`
 
-Children are resumed before the scheduled root so the root can never fire into a suspended graph. Manual pause/resume remains available for incident response.
+Children are resumed before the root so a GitHub `EXECUTE TASK` can never fire into a suspended graph. Manual pause/resume remains available for incident response.
 
-`VERIFY:` confirm `CREATE OR REPLACE TASK` semantics and child/finalizer dependency preservation in the target account: https://docs.snowflake.com/en/sql-reference/sql/create-task.
+`VERIFY:` confirm `CREATE OR REPLACE TASK` semantics, child/finalizer dependency preservation, and that a root without `SCHEDULE` runs only on demand: https://docs.snowflake.com/en/sql-reference/sql/create-task.
 
 ## Pause
 Disable GitHub cron and suspend/disable root and child tasks using supported task controls. Suspend warehouse when safe. Verify graph-wide suspension behavior in the account.
@@ -77,6 +77,7 @@ Disable GitHub cron and suspend/disable root and child tasks using supported tas
 - Failure blocks publication.
 - Finalizer logs failures.
 - Re-running a stage is safe.
+- GitHub Actions is the only scheduler; the Snowflake root has no cron schedule.
 - Internal-stage deploy and automatic task-graph resume are tested live.
 - Task history proves the full graph ran.
 

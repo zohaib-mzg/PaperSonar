@@ -6,14 +6,17 @@
 -- Idempotent: Yes - CREATE OR REPLACE TASK, review graph dependencies on redeploy.
 -- Owner: PAPERSONAR_ADMIN (tasks execute as owner)
 -- Parameters: None.
--- Cost: One XS warehouse per task, root scheduled daily at 03:00 UTC. GitHub
---       triggers the same graph immediately after a batch reaches LOADED.
+-- Cost: One XS warehouse per task. GitHub Actions is the only scheduler: it
+--       extracts at 02:30 UTC and calls the root once with `trigger --drain`.
+--       This Snowflake root has no SCHEDULE and runs only via EXECUTE TASK.
 -- =============================================================================
 -- VERIFY: confirm CREATE OR REPLACE TASK rebuilds child dependencies, that
 -- FINALIZE runs after failed children, and that EXECUTE TASK works for the loader.
+-- A root without SCHEDULE runs on demand only:
+-- https://docs.snowflake.com/en/sql-reference/sql/create-task
 -- CREATE OR REPLACE TASK leaves every task SUSPENDED; runner.cli deploy resumes
 -- the graph after this file is applied (root SUSPEND, all children RESUME, root
--- RESUME). For manual recovery, resume children before the scheduled root.
+-- RESUME). For manual recovery, resume children before the root.
 -- Pause the graph with ALTER TASK ... TASK_ELT_ROOT SUSPEND.
 -- Root eligibility is LOADED only. Claiming changes the row to PROCESSING before
 -- any child runs.
@@ -22,8 +25,7 @@
 
 CREATE OR REPLACE TASK PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT
   WAREHOUSE = WH_PAPERSONAR_ELT
-  SCHEDULE = 'USING CRON 0 3 * * * UTC'
-  ALLOW_OVERLAPPING_EXECUTION = FALSE
+  OVERLAP_POLICY = NO_OVERLAP
   USER_TASK_TIMEOUT_MS = 1800000
   SUSPEND_TASK_AFTER_NUM_FAILURES = 5
   COMMENT = 'PaperSonar root: claim the oldest LOADED batch'

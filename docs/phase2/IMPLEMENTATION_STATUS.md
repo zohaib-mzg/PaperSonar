@@ -12,6 +12,7 @@ plan. See [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openal
 - Python performs extraction and upload only: raw gzip NDJSON shards, deterministic batch IDs, checksums, manifest registration, and `PUT` to the internal stage.
 - Python does not clean fields, assign surrogate keys, deduplicate records, categorize, or transform business data.
 - Snowflake SQL performs staging COPY, bronze current-state upsert, silver projection/identity, categorization, dimensions, facts, DQ, and publication.
+- GitHub Actions is the only scheduler (02:30 UTC); the Snowflake root has no `SCHEDULE` and runs through `EXECUTE TASK` from `trigger --drain`.
 - Seven schemas: `PROJECT_STAGING`, `PROJECT_BRONZE`, `PROJECT_SILVER`, `PROJECT_DW`, `PROJECT_REPORTING`, `PROJECT_AUDIT`, `PROJECT_REF`.
 - Five sources only: OpenAlex, Crossref, arXiv, DataCite, Zenodo.
 - No `INFER_SCHEMA`; every table has explicit DDL.
@@ -44,13 +45,14 @@ The old `src/papersonar/` package remains in place. The old `phase2.yml` workflo
 | Check | Result | Evidence |
 |---|---|---|
 | Ruff on `src` and `tests` | PASS | local run |
-| Python unit/integration tests | PASS | `python -m pytest tests -q` (`219 passed`) |
-| SQL static contracts | PASS | `tests/sql/test_sql_contracts.py` (`11 passed`) |
+| Python unit/integration tests | PASS | `python -m pytest tests -q` (`224 passed`) |
+| SQL static contracts | PASS | `tests/sql/test_sql_contracts.py` (`12 passed`) |
 | Dry-run shard writing | PASS | unit tests with fake HTTP |
 | Live SQL deployment | PASS | full-load run; inline JSON file format for COPY |
 | Live COPY/procedure execution | PASS | `168725` staging rows; 5/5 `FILE_LOAD_LOG` rows `MATCH` |
 | Task graph execution/history | PASS | root through finalizer; batch `PUBLISHED` |
 | Task graph auto-resume after deploy | PASS | `SHOW TASKS`: all 10 tasks `started` |
+| Scheduler contract | PASS | GitHub cron + no Snowflake root `SCHEDULE` (workflow/SQL tests) |
 | DQ gate live demonstration | PASS | 12 rules; `critical_failures=0`, 2 warnings |
 | Bronze current-state uniqueness | PASS | `168725` rows / `168725` ids / `0` duplicates |
 | Dimension >= 100 / fact >= 10,000 | PASS | `168725` outputs and citation snapshots |
@@ -96,7 +98,7 @@ These are marked in the SQL and require the target account/API:
 2. DataCite `updated:[...]` query syntax against the live API.
 3. arXiv/Zenodo XML extraction with `REGEXP_SUBSTR_ALL(... 'e', 1)`.
 4. `SHA2(TO_JSON(payload))` stability for staged VARIANT replay.
-5. Task graph `FINALIZE` failed-child behavior was observed live. `CREATE OR REPLACE TASK` recreates tasks suspended; the deploy client resumes children before the root: https://docs.snowflake.com/en/sql-reference/sql/create-task
+5. Task graph `FINALIZE` failed-child behavior was observed live. `CREATE OR REPLACE TASK` recreates tasks suspended; the deploy client resumes children before the root. Snowflake docs confirm a root without `SCHEDULE` runs only via `EXECUTE TASK`: https://docs.snowflake.com/en/sql-reference/sql/create-task
 6. `EXECUTE TASK` for the configured deployment/trigger role was exercised live.
 7. Materialized view/dynamic table edition support (manual-only file).
 8. Actual trial credits, resource-monitor actions, and account features.

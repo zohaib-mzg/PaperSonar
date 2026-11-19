@@ -3,16 +3,16 @@
 ## Workflow A: `extract-load`
 Location: `.github/workflows/extract-load.yml`.
 
-Triggers: cron schedule and `workflow_dispatch` with inputs:
+Triggers: GitHub cron at `02:30 UTC` (the only scheduler) and `workflow_dispatch` with inputs:
 - `mode`: `full` or `incremental`
 - `source`: one source or `all`
 - `from_date`
 - `until_date`
 - `dry_run`
 - `force`
-- `openalex_daily_sync`: confirms the OpenAlex Member+/Partner daily-sync entitlement
+- `openalex_daily_sync`: confirms the OpenAlex Member+/Partner daily-sync entitlement; scheduled runs read the `OPENALEX_DAILY_SYNC` repository variable
 
-The job extracts selected sources sequentially with `--no-task`, then drains the Snowflake task graph once with `python -m runner.cli trigger --drain`. Full mode is the one-time 100,000+ initial backfill and uses publication-date filters; incremental mode uses `from_updated_date`/`to_updated_date` only. OpenAlex incremental fails closed unless `openalex_daily_sync=true`; no publication-date fallback is used. `VERIFY:` OpenAlex daily-sync entitlement and current GitHub-hosted runner limits; official docs: https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists and https://docs.github.com/en/actions/reference/runners/github-hosted-runners.
+The job extracts selected sources sequentially with `--no-task`, then drains the Snowflake task graph once with `python -m runner.cli trigger --drain`. Full mode is the one-time 100,000+ initial backfill and uses publication-date filters; incremental mode uses `from_updated_date`/`to_updated_date` only. OpenAlex incremental fails closed for an explicit `source=openalex` request and is skipped in `source=all` runs unless confirmation comes from the input or the repository variable; no publication-date fallback is used. `VERIFY:` OpenAlex daily-sync entitlement and current GitHub-hosted runner limits; official docs: https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists and https://docs.github.com/en/actions/reference/runners/github-hosted-runners.
 
 Steps:
 1. Validate input and window.
@@ -32,14 +32,14 @@ Retries must be bounded and use backoff. A partial failure leaves the batch fail
 ## Workflow B: `deploy-ci`
 Location: `.github/workflows/deploy-ci.yml`.
 
-Triggers: pull request and push. This workflow never moves research data and never starts extraction.
+Triggers: `workflow_dispatch` with `confirm=DEPLOY` and push to `main` on SQL/config/runner paths. This workflow never moves research data and never starts extraction.
 
 Steps:
 1. Checkout repository and install pinned Python dependencies.
 2. Run `ruff` and `pytest` (including SQL static contracts).
 3. Authenticate with `SNOWFLAKE_DEPLOY_ROLE` (`PAPERSONAR_ADMIN`, never `ACCOUNTADMIN`).
 4. Upload SQL files to the internal `SQL_STAGE` with `PUT` and apply them with `EXECUTE IMMEDIATE FROM`.
-5. When `09_tasks/02_task_graph.sql` is deployed, resume the task graph automatically: suspend the root, resume all children, then resume the root. Children must be resumed before the scheduled root.
+5. When `09_tasks/02_task_graph.sql` is deployed, resume the task graph automatically: suspend the root, resume all children, then resume the root. Children must be resumed before the root.
 6. Save test results and sanitized logs.
 7. Fail the check if any mandatory test fails.
 
@@ -64,8 +64,9 @@ Store private key, passphrase if any, account, username, role, and required conn
 - Retries and concurrency do not duplicate data.
 - Secrets are absent from logs.
 - CI proves SQL lint, Python tests, DDL deployment, and SQL checks.
-- A recreated task graph is resumed before the scheduled root can fire.
-- OpenAlex incremental extraction fails closed without Member+/Partner daily sync.
+- A recreated task graph is resumed before the root can be triggered.
+- GitHub Actions is the only scheduler; the Snowflake root has no cron schedule.
+- OpenAlex incremental fails closed for an explicit run and is skipped in all-source runs without Member+/Partner daily sync.
 
 ## References
 - GitHub Actions workflow syntax: https://docs.github.com/en/actions/writing-workflows/workflow-syntax-for-github-actions

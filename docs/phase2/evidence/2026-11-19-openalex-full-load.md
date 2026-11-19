@@ -4,6 +4,10 @@ Captured 2026-11-19 UTC with `PAPERSONAR_ADMIN` for SQL/task queries and
 `PAPERSONAR_LOADER` for extraction. Query IDs are Snowflake `sfqid` values;
 no credentials or account identifiers are recorded.
 
+> **Scheduler note:** this run happened while the root still had a 03:00 UTC
+> cron. The current version has no Snowflake `SCHEDULE`; GitHub Actions is the
+> only scheduler. The graph execution and publication evidence remains valid.
+
 ## Extraction
 
 Command:

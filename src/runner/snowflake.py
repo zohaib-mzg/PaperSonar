@@ -447,8 +447,8 @@ class SnowflakeClient:
     def resume_task_graph(self) -> None:
         """Resume the ELT graph after CREATE OR REPLACE TASK suspends every task.
 
-        Child tasks must be resumed before the scheduled root so the root can
-        never fire into a graph whose children are still suspended.
+        Child tasks must be resumed before the root so GitHub's `EXECUTE TASK`
+        never fires into a graph whose children are still suspended.
         """
         self.execute(f"ALTER TASK {ROOT_TASK} SUSPEND")
         for task in ELT_CHILD_TASKS:

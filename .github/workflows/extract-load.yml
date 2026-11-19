@@ -7,9 +7,11 @@ name: extract-load
 
 on:
   schedule:
-    # Daily incremental extraction. OpenAlex incremental requires Member+/Partner
-    # daily sync; the plan guard fails closed until that entitlement is enabled.
-    # The Snowflake task graph is drained once after all sources finish loading.
+    # Daily incremental extraction. GitHub is the only scheduler; the Snowflake
+    # root has no cron. OpenAlex incremental requires Member+/Partner daily sync;
+    # the guard fails closed for an explicit OpenAlex run and skips OpenAlex in
+    # an all-source run until that entitlement is confirmed. The Snowflake task
+    # graph is drained once after all sources finish loading.
     - cron: "30 2 * * *"
   workflow_dispatch:
     inputs:
@@ -52,7 +54,7 @@ on:
         default: false
         type: boolean
       openalex_daily_sync:
-        description: "Confirm OpenAlex Member+/Partner daily sync is enabled for incremental runs"
+        description: "Confirm OpenAlex Member+/Partner daily sync; scheduled runs read the OPENALEX_DAILY_SYNC repository variable"
         required: false
         default: false
         type: boolean
@@ -95,7 +97,7 @@ jobs:
       PAPERSONAR_TARGET: snowflake
       DRY_RUN: ${{ inputs.dry_run || false }}
       FORCE: ${{ inputs.force || false }}
-      OPENALEX_DAILY_SYNC: ${{ inputs.openalex_daily_sync || false }}
+      OPENALEX_DAILY_SYNC: ${{ inputs.openalex_daily_sync || vars.OPENALEX_DAILY_SYNC || false }}
       MODE: ${{ inputs.mode || 'incremental' }}
       SOURCE: ${{ inputs.source || 'all' }}
       FROM_DATE: ${{ inputs.from_date }}
@@ -164,15 +166,21 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          SKIP_OPENALEX=false
           uses_openalex=false
           if [ "$SOURCE" = "all" ] || [ "$SOURCE" = "openalex" ]; then
             uses_openalex=true
           fi
           if [ "$uses_openalex" = true ] && [ "$MODE" = "incremental" ] && [ "$OPENALEX_DAILY_SYNC" != "true" ]; then
-            echo "::error::OpenAlex incremental extraction uses from_updated_date, which requires an OpenAlex Member+ or Partner plan. Re-run with openalex_daily_sync=true after the plan is enabled, or use mode=full for the one-time backfill. No publication-date fallback is used."
-            exit 1
+            if [ "$SOURCE" = "openalex" ]; then
+              echo "::error::OpenAlex incremental extraction uses from_updated_date, which requires an OpenAlex Member+ or Partner plan. Re-run with openalex_daily_sync=true or set the OPENALEX_DAILY_SYNC repository variable after the plan is enabled. No publication-date fallback is used."
+              exit 1
+            fi
+            SKIP_OPENALEX=true
+            echo "::warning::OpenAlex incremental skipped in an all-source run: Member+/Partner daily sync is not confirmed. Other sources continue; no publication-date fallback is used."
           fi
-          echo "OpenAlex plan guard passed (mode=$MODE, source=$SOURCE)."
+          echo "SKIP_OPENALEX=$SKIP_OPENALEX" >> "$GITHUB_ENV"
+          echo "OpenAlex plan guard passed (mode=$MODE, source=$SOURCE, skip_openalex=$SKIP_OPENALEX)."
       - name: Validate local configuration
         run: python -m runner.cli check
       - name: Extract source windows
@@ -180,12 +188,16 @@ jobs:
         run: |
           set -euo pipefail
           if [ "$SOURCE" = "all" ]; then
-            sources=(openalex crossref arxiv datacite zenodo)
+            sources=(crossref arxiv datacite zenodo)
+            if [ "${SKIP_OPENALEX:-false}" != "true" ]; then
+              sources=(openalex "${sources[@]}")
+            fi
           else
             sources=("$SOURCE")
           fi
 
           echo "Mode $MODE: full is the one-time 100k+ backfill; incremental uses updated-date windows."
+          echo "Sources in this run: ${sources[*]}"
           for source in "${sources[@]}"; do
             args=(--source "$source" --mode "$MODE" --json --no-task)
             if [ -n "${FROM_DATE:-}" ]; then
@@ -222,7 +234,9 @@ jobs:
             echo "- Dry run: $DRY_RUN"
             echo "- Snowflake task: \`PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT\`"
             echo "- Full mode is the one-time backfill; incremental uses updated-date windows only."
-            echo "- OpenAlex incremental requires Member+/Partner daily sync (from_updated_date)."
+            echo "- OpenAlex incremental requires Member+/Partner daily sync (from_updated_date); all-source runs skip it unless confirmed."
+            echo "- OpenAlex confirmation: input \`openalex_daily_sync\` or repository variable \`OPENALEX_DAILY_SYNC\`."
             echo "- Task graph is triggered once with \`--drain\` after every source is LOADED."
+            echo "- GitHub Actions is the only scheduler; the Snowflake root has no cron schedule."
             echo "- Raw shards: gzip NDJSON; no Python transforms."
           } >> "$GITHUB_STEP_SUMMARY"
