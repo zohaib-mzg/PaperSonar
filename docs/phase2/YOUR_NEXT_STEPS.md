@@ -273,6 +273,57 @@ python -m runner.cli trigger --drain
 
 For a full first load, run each source with `--mode full` and `--no-task`, then `trigger --drain`. Keep the first run small until the live `VERIFY:` items pass.
 
+### Crossref real-run limit
+
+`config/sources.yml` now sets `crossref.max_records: 20000` and
+`crossref.overlap_days: 0`. One Crossref index-date day contains roughly
+800,000–900,000 works, so an uncapped daily run cannot finish inside the
+240-minute GitHub job.
+
+`max_records` is a first-class real-run limit. It is **not** the same as the
+test-only `max_pages`:
+
+- the extractor stops after 20,000 loaded records **per window**;
+- the batch still becomes `LOADED` and its manifest row counts match the gzip shards;
+- `BATCH.IS_CAPPED` and `PUBLISHED_BATCH.IS_CAPPED` become `TRUE`;
+- `BATCH.CURSOR_END` keeps the first unread cursor instead of the normal NULL
+  “window exhausted” marker;
+- `SP_PUBLISH_BATCH()` publishes the partial data for visibility but **does not
+  advance `SOURCE_WATERMARK`** for a capped window.
+
+This means a capped Crossref batch never claims that the rest of the date was
+processed. The source watermark stays at the last complete window, so no data is
+silently skipped.
+
+Check a capped batch with:
+
+```sql
+SELECT BATCH_ID, SOURCE_NAME, STATUS, RECORD_COUNT, FILE_COUNT,
+       IS_CAPPED, CURSOR_END
+FROM PAPERSONAR.PROJECT_AUDIT.BATCH
+ORDER BY CREATED_AT DESC
+LIMIT 5;
+
+SELECT SUM(MANIFEST_ROWS) AS MANIFEST_RECORDS, COUNT(*) AS FILES
+FROM PAPERSONAR.PROJECT_AUDIT.FILE_LOAD_LOG
+WHERE BATCH_ID = '<batch_id>';
+
+SELECT BATCH_ID, IS_CAPPED, DQ_SUMMARY
+FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH
+WHERE BATCH_ID = '<batch_id>';
+
+SELECT * FROM PAPERSONAR.PROJECT_AUDIT.SOURCE_WATERMARK
+WHERE SOURCE_NAME = 'CROSSREF';
+```
+
+`MANIFEST_RECORDS` must equal `BATCH.RECORD_COUNT` (20,000 for a full cap). The
+watermark should not move on a capped batch. Remove or raise `max_records` only
+after increasing the workflow timeout or reducing the date window.
+
+The normal deploy applies `sql/01_staging/00_audit_cap_columns.sql`, which adds
+the new columns to an existing Snowflake account. Run `deploy-ci` before the
+first capped real run.
+
 ---
 
 ## 9. Capture acceptance evidence
@@ -329,6 +380,7 @@ Acceptance targets:
 - [ ] Zero orphan facts/bridges.
 - [ ] 10,000 facts loaded within 60 minutes of staging.
 - [ ] At least one batch reaches `PUBLISHED`.
+- [ ] A capped batch has `IS_CAPPED = TRUE`, matching manifest counts, and does not advance `SOURCE_WATERMARK`.
 - [ ] All 12 DQ rules have rows for the batch.
 - [ ] A controlled CRITICAL DQ failure leaves the batch unpublished and does not advance the watermark.
 

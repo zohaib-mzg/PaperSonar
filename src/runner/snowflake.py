@@ -110,7 +110,8 @@ class SnowflakeClient:
     def get_batch(self, batch_id: str) -> dict[str, Any] | None:
         rows = self.execute(
             "SELECT BATCH_ID, SOURCE_NAME, ENTITY_NAME, STATUS, CURSOR_END, "
-            "FILE_COUNT, RECORD_COUNT FROM PROJECT_AUDIT.BATCH WHERE BATCH_ID = %s",
+            "FILE_COUNT, RECORD_COUNT, IS_CAPPED FROM PROJECT_AUDIT.BATCH "
+            "WHERE BATCH_ID = %s",
             [batch_id],
         )
         if not rows:
@@ -135,6 +136,7 @@ class SnowflakeClient:
         window_start: str,
         window_end: str,
         cursor_start: str | None,
+        is_capped: bool = False,
     ) -> None:
         self.execute(
             """
@@ -142,7 +144,8 @@ class SnowflakeClient:
             USING (
               SELECT %s AS BATCH_ID, UPPER(%s) AS SOURCE_NAME, UPPER(%s) AS ENTITY_NAME,
                      %s AS EXTRACTION_MODE, TO_DATE(%s) AS WINDOW_START,
-                     TO_DATE(%s) AS WINDOW_END, %s AS CURSOR_START
+                     TO_DATE(%s) AS WINDOW_END, %s AS CURSOR_START,
+                     %s AS IS_CAPPED
             ) s
             ON t.BATCH_ID = s.BATCH_ID
             WHEN MATCHED AND t.STATUS IN ('EXTRACTING', 'LOADED', 'FAILED') THEN UPDATE SET
@@ -151,34 +154,56 @@ class SnowflakeClient:
               t.WINDOW_START = s.WINDOW_START,
               t.WINDOW_END = s.WINDOW_END,
               t.CURSOR_START = s.CURSOR_START,
+              t.IS_CAPPED = s.IS_CAPPED,
               t.ERROR_SUMMARY = NULL,
               t.UPDATED_AT = CURRENT_TIMESTAMP()
             WHEN NOT MATCHED THEN INSERT
               (BATCH_ID, SOURCE_NAME, ENTITY_NAME, EXTRACTION_MODE, WINDOW_START,
-               WINDOW_END, STATUS, CURSOR_START, FILE_COUNT, RECORD_COUNT,
+               WINDOW_END, STATUS, CURSOR_START, IS_CAPPED, FILE_COUNT, RECORD_COUNT,
                CREATED_AT, UPDATED_AT)
               VALUES (s.BATCH_ID, s.SOURCE_NAME, s.ENTITY_NAME, s.EXTRACTION_MODE,
                       s.WINDOW_START, s.WINDOW_END, 'EXTRACTING', s.CURSOR_START,
-                      0, 0, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+                      s.IS_CAPPED, 0, 0, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
             """,
-            [batch_id, source_name, entity_name, mode, window_start, window_end, cursor_start],
+            [
+                batch_id,
+                source_name,
+                entity_name,
+                mode,
+                window_start,
+                window_end,
+                cursor_start,
+                is_capped,
+            ],
         )
 
     def update_batch_progress(
-        self, batch_id: str, cursor: str | None, file_count: int, record_count: int
+        self,
+        batch_id: str,
+        cursor: str | None,
+        file_count: int,
+        record_count: int,
+        is_capped: bool = False,
     ) -> None:
         self.execute(
             "UPDATE PROJECT_AUDIT.BATCH SET CURSOR_END = %s, FILE_COUNT = %s, "
-            "RECORD_COUNT = %s, UPDATED_AT = CURRENT_TIMESTAMP() WHERE BATCH_ID = %s",
-            [cursor, file_count, record_count, batch_id],
+            "RECORD_COUNT = %s, IS_CAPPED = %s, UPDATED_AT = CURRENT_TIMESTAMP() "
+            "WHERE BATCH_ID = %s",
+            [cursor, file_count, record_count, is_capped, batch_id],
         )
 
-    def mark_batch_loaded(self, batch_id: str, file_count: int, record_count: int) -> None:
+    def mark_batch_loaded(
+        self,
+        batch_id: str,
+        file_count: int,
+        record_count: int,
+        is_capped: bool = False,
+    ) -> None:
         self.execute(
             "UPDATE PROJECT_AUDIT.BATCH SET STATUS = 'LOADED', FILE_COUNT = %s, "
-            "RECORD_COUNT = %s, UPDATED_AT = CURRENT_TIMESTAMP() "
+            "RECORD_COUNT = %s, IS_CAPPED = %s, UPDATED_AT = CURRENT_TIMESTAMP() "
             "WHERE BATCH_ID = %s AND STATUS = 'EXTRACTING'",
-            [file_count, record_count, batch_id],
+            [file_count, record_count, is_capped, batch_id],
         )
 
     def mark_batch_failed(self, batch_id: str, error_summary: str) -> None:
@@ -202,7 +227,7 @@ class SnowflakeClient:
         )
         self.execute(
             "UPDATE PROJECT_AUDIT.BATCH SET CURSOR_START = NULL, CURSOR_END = NULL, "
-            "FILE_COUNT = 0, RECORD_COUNT = 0, ERROR_SUMMARY = NULL, "
+            "FILE_COUNT = 0, RECORD_COUNT = 0, IS_CAPPED = FALSE, ERROR_SUMMARY = NULL, "
             "UPDATED_AT = CURRENT_TIMESTAMP() WHERE BATCH_ID = %s",
             [batch_id],
         )

@@ -207,6 +207,20 @@ def test_author_keys_are_json_null_safe() -> None:
             assert safe in sql, f"{relative}: missing JSON-null-safe check {safe!r}"
 
 
+def test_capped_windows_are_visible_and_do_not_advance_watermark() -> None:
+    patch = _read(SQL_ROOT / "01_staging" / "00_audit_cap_columns.sql")
+    assert patch.count("ADD COLUMN IF NOT EXISTS IS_CAPPED BOOLEAN DEFAULT FALSE;") == 2
+
+    publish = _read(SQL_ROOT / "07_reporting" / "03_publish_batch.sql")
+    assert "IS_CAPPED" in publish
+    assert "IF (COALESCE(:is_capped, FALSE)) THEN" in publish
+    assert "publish_result := 'PUBLISHED_CAPPED'" in publish
+    assert "RETURN :publish_result;" in publish
+
+    views = _read(SQL_ROOT / "07_reporting" / "01_views.sql")
+    assert "PUBLISHED.IS_CAPPED" in views
+
+
 def test_elt_root_has_no_snowflake_cron_schedule() -> None:
     """GitHub Actions owns scheduling; the Snowflake root is on-demand only."""
     executable = _strip_line_comments(_read(SQL_ROOT / "09_tasks" / "02_task_graph.sql"))
