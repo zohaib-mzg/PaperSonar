@@ -99,4 +99,4 @@ Use `PASS`, `FAIL`, `BLOCKED`, or `NOT TESTED` for each acceptance criterion. If
 
 Stop immediately after Phase 2 work and its acceptance report are complete, or after clearly reporting that acceptance is blocked by unavailable mandatory Snowflake access. Do not begin Phase 3. Do not create Power BI dashboards, publish reports, build a web application, add sources, or implement product features. End with the exact statement:
 
-**“Phase 2 implementation has stopped at the defined boundary. Phase 3 has not been started.”**
+**ΓÇ£Phase 2 implementation has stopped at the defined boundary. Phase 3 has not been started.ΓÇ¥**

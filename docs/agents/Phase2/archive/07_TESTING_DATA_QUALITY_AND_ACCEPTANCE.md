@@ -109,4 +109,4 @@ Never make up row counts or test results. If external credentials are unavailabl
 
 ## Course-scale targets
 
-The recovered project context includes targets of 30,000–60,000 admitted works and the course requires at least 100 dimension records and 10,000 fact records. Treat these as targets/acceptance requirements to verify against the official course document and actual corpus. Do not fabricate counts or force bad data into the warehouse just to meet a number. Report actual loaded counts and the safe steps needed to reach the target.
+The recovered project context includes targets of 30,000ΓÇô60,000 admitted works and the course requires at least 100 dimension records and 10,000 fact records. Treat these as targets/acceptance requirements to verify against the official course document and actual corpus. Do not fabricate counts or force bad data into the warehouse just to meet a number. Report actual loaded counts and the safe steps needed to reach the target.

@@ -1,0 +1,191 @@
+# PaperSonar Phase 2 taxonomy contract (version 1).
+# ---------------------------------------------------------------------------
+# The authoritative seed lives in sql/04_categorization/01_seed_taxonomy.sql.
+# tests/sql/test_config_contracts.py fails when this file and the SQL seed
+# drift apart. Cortex is OFF by default; no category depends on it.
+# ---------------------------------------------------------------------------
+taxonomy_version: "v1"
+
+categories:
+  - key: "ai-ml"
+    label: "Artificial Intelligence and Machine Learning"
+    parent: null
+  - key: "llm"
+    label: "Large Language Models"
+    parent: "ai-ml"
+  - key: "rag"
+    label: "Retrieval-Augmented Generation"
+    parent: "llm"
+  - key: "ai-agents"
+    label: "AI Agents"
+    parent: "llm"
+  - key: "code-generation"
+    label: "Code Generation"
+    parent: "ai-ml"
+  - key: "program-repair"
+    label: "Program Repair"
+    parent: "software-engineering"
+  - key: "software-testing"
+    label: "Software Testing"
+    parent: "software-engineering"
+  - key: "software-maintenance"
+    label: "Software Maintenance"
+    parent: "software-engineering"
+  - key: "program-analysis"
+    label: "Program Analysis"
+    parent: "software-engineering"
+  - key: "developer-tools"
+    label: "Developer Tools"
+    parent: "software-engineering"
+  - key: "mlops"
+    label: "MLOps"
+    parent: "software-engineering"
+  - key: "data-engineering"
+    label: "Data Engineering"
+    parent: "software-engineering"
+  - key: "databases"
+    label: "Databases"
+    parent: "software-engineering"
+  - key: "security-privacy"
+    label: "Security and Privacy"
+    parent: "software-engineering"
+  - key: "requirements-engineering"
+    label: "Requirements Engineering"
+    parent: "software-engineering"
+  - key: "software-architecture"
+    label: "Software Architecture"
+    parent: "software-engineering"
+  - key: "empirical-software-engineering"
+    label: "Empirical Software Engineering"
+    parent: "software-engineering"
+  - key: "human-computer-interaction"
+    label: "Human-Computer Interaction"
+    parent: "software-engineering"
+  - key: "distributed-systems"
+    label: "Distributed Systems"
+    parent: "software-engineering"
+  - key: "software-engineering"
+    label: "Software Engineering"
+    parent: null
+  - key: "unclassified"
+    label: "Unclassified"
+    parent: null
+
+# Weighted keyword rules: title weight x3, topic/keyword weight x2, abstract x1.
+# Negative/context guards are applied in SQL before a rule contributes.
+rules:
+  - category: "rag"
+    pattern: "retrieval augmented generation"
+    field: title
+  - category: "rag"
+    pattern: "retrieval-augmented generation"
+    field: title
+  - category: "rag"
+    pattern: "rag"
+    field: title
+    guard: "acronym"
+  - category: "llm"
+    pattern: "large language model"
+    field: title
+  - category: "llm"
+    pattern: "llm"
+    field: title
+    guard: "acronym"
+  - category: "ai-agents"
+    pattern: "ai agent"
+    field: title
+  - category: "ai-agents"
+    pattern: "agentic"
+    field: title
+  - category: "code-generation"
+    pattern: "code generation"
+    field: title
+  - category: "code-generation"
+    pattern: "code completion"
+    field: title
+  - category: "program-repair"
+    pattern: "program repair"
+    field: title
+  - category: "program-repair"
+    pattern: "automated repair"
+    field: title
+  - category: "software-testing"
+    pattern: "software testing"
+    field: title
+  - category: "software-testing"
+    pattern: "test generation"
+    field: title
+  - category: "software-testing"
+    pattern: "mutation testing"
+    field: title
+  - category: "software-maintenance"
+    pattern: "software maintenance"
+    field: title
+  - category: "software-maintenance"
+    pattern: "code refactoring"
+    field: title
+  - category: "program-analysis"
+    pattern: "program analysis"
+    field: title
+  - category: "program-analysis"
+    pattern: "static analysis"
+    field: title
+  - category: "developer-tools"
+    pattern: "developer tool"
+    field: title
+  - category: "developer-tools"
+    pattern: "ide"
+    field: keywords
+    guard: "acronym"
+  - category: "mlops"
+    pattern: "mlops"
+    field: title
+  - category: "mlops"
+    pattern: "machine learning operations"
+    field: title
+  - category: "data-engineering"
+    pattern: "data pipeline"
+    field: title
+  - category: "data-engineering"
+    pattern: "data engineering"
+    field: title
+  - category: "data-engineering"
+    pattern: "etl"
+    field: keywords
+    guard: "acronym"
+  - category: "databases"
+    pattern: "database"
+    field: title
+  - category: "databases"
+    pattern: "query optimization"
+    field: title
+  - category: "security-privacy"
+    pattern: "vulnerability"
+    field: title
+  - category: "security-privacy"
+    pattern: "privacy"
+    field: title
+  - category: "requirements-engineering"
+    pattern: "requirements engineering"
+    field: title
+  - category: "software-architecture"
+    pattern: "software architecture"
+    field: title
+  - category: "software-architecture"
+    pattern: "microservice"
+    field: title
+  - category: "empirical-software-engineering"
+    pattern: "empirical study"
+    field: title
+  - category: "human-computer-interaction"
+    pattern: "human computer interaction"
+    field: title
+  - category: "human-computer-interaction"
+    pattern: "usability"
+    field: title
+  - category: "distributed-systems"
+    pattern: "distributed system"
+    field: title
+  - category: "distributed-systems"
+    pattern: "consensus"
+    field: title

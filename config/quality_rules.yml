@@ -1,0 +1,48 @@
+# PaperSonar Phase 2 data-quality contract (version 1).
+# ---------------------------------------------------------------------------
+# Thresholds are applied by sql/08_audit_dq/02_run_dq.sql. A CRITICAL failure
+# blocks publication; WARNING/INFO failures are recorded but do not block.
+# tests/sql/test_sql_contracts.py checks that every rule id below exists in the
+# DQ procedure and that severities match the SQL seed.
+# ---------------------------------------------------------------------------
+dq_version: "v1"
+category_coverage_min_ratio: 0.60
+freshness_max_hours: 72
+
+rules:
+  - id: "DQ-001"
+    description: "Every registered manifest file has a staging row count equal to its manifest record count."
+    severity: "CRITICAL"
+  - id: "DQ-002"
+    description: "Bronze observations for the batch equal the distinct staged (source, record id) keys."
+    severity: "CRITICAL"
+  - id: "DQ-003"
+    description: "Silver crosswalk rows plus quarantined rows reconcile to bronze observations for the batch."
+    severity: "CRITICAL"
+  - id: "DQ-004"
+    description: "Every fact grain (OUTPUT_SK) is unique in FACT_RESEARCH_OUTPUT."
+    severity: "CRITICAL"
+  - id: "DQ-005"
+    description: "Facts have no orphan or null dimension references (date, type, venue, access)."
+    severity: "CRITICAL"
+  - id: "DQ-006"
+    description: "Bridge rows have no orphan author/topic/category dimension references."
+    severity: "CRITICAL"
+  - id: "DQ-007"
+    description: "Exactly one current SCD2 row exists per DIM_AUTHOR business key."
+    severity: "CRITICAL"
+  - id: "DQ-008"
+    description: "Invalid DOI values are visible in quarantine and never silently replaced."
+    severity: "WARNING"
+  - id: "DQ-009"
+    description: "Categorized outputs meet the configured minimum coverage ratio."
+    severity: "WARNING"
+  - id: "DQ-010"
+    description: "Source watermark freshness is within the configured maximum age."
+    severity: "WARNING"
+  - id: "DQ-011"
+    description: "Required top-level payload keys are present; missing required keys block publication."
+    severity: "CRITICAL"
+  - id: "DQ-012"
+    description: "Every output touched by the batch has exactly one primary category assignment."
+    severity: "CRITICAL"

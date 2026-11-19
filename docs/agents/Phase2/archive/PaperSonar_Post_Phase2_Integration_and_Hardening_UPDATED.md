@@ -1,4 +1,4 @@
-# PaperSonar — Post-Phase 2 Integration, SQL Engineering, and Hardening Instructions
+# PaperSonar ΓÇö Post-Phase 2 Integration, SQL Engineering, and Hardening Instructions
 
 **Document purpose:** Give the implementation agent a clear, testable checklist to run after completing the Phase 2 implementation pack.
 

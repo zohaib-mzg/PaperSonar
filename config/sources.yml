@@ -1,0 +1,97 @@
+# PaperSonar Phase 2 source contract.
+# ---------------------------------------------------------------------------
+# This file is the single operator-facing configuration for extraction. It does
+# not contain secrets. Credentials come from environment variables / GitHub
+# Secrets (see docs/phase2/04_GITHUB_ACTIONS.md).
+#
+# Every extractor writes raw, unmodified source objects as gzip NDJSON. Windows
+# are logical extraction units; a deterministic batch id prevents retries from
+# forking duplicate batches.
+# ---------------------------------------------------------------------------
+version: 1
+
+runtime:
+  # Roll a new shard when the uncompressed NDJSON for the current shard exceeds
+  # this size. 128 MiB uncompressed is a safe GitHub-runner memory bound.
+  target_file_bytes: 134217728
+  raw_dir: data/extract
+  # Backfill is chunked; one run advances at most this many windows per source.
+  max_windows_per_run: 60
+  user_agent: "PaperSonar/0.3 (research metadata extraction; contact: CROSSREF_CONTACT_EMAIL)"
+
+sources:
+  openalex:
+    enabled: true
+    entity: work
+    page_size: 100
+    select: [id,doi,display_name,title,publication_date,publication_year,type,primary_location,open_access,cited_by_count,authorships,topics,referenced_works,language,updated_date]
+    # No max_pages: cursor paging reads every work in the window. The runner
+    # splits the window into deterministic shards at runtime.target_file_bytes
+    # and persists next_cursor after each shard, so a failure resumes exactly.
+    filter: "has_doi:true"
+    rate_delay_seconds: 0.12
+    timeout_seconds: 60
+    # A page normally arrives in seconds. This only bounds one attempt; it is
+    # not a cap on the whole window (a full 130k-record window takes ~10 min).
+    total_timeout_seconds: 900
+    max_attempts: 5
+    backoff_base_seconds: 2
+    backoff_max_seconds: 60
+    # Incremental mode uses OpenAlex's from_updated_date/to_updated_date change
+    # feed and re-reads one overlap day. Full/backfill mode uses publication
+    # dates and is the one-time all-works load.
+    overlap_days: 1
+    backfill_from: "2026-11-01"
+
+  crossref:
+    enabled: true
+    entity: work
+    page_size: 100
+    max_pages: 3          # test only, remove before a real run
+    select: [DOI,URL,title,issued,type,container-title,author,subject,reference,is-referenced-by-count,created,indexed]
+    rate_delay_seconds: 0.2
+    timeout_seconds: 90
+    max_attempts: 5
+    backoff_base_seconds: 2
+    backoff_max_seconds: 90
+    overlap_days: 2
+    backfill_from: "2026-11-01"
+
+  arxiv:
+    enabled: true
+    entity: record
+    metadata_prefix: arXiv
+    rate_delay_seconds: 3.0
+    timeout_seconds: 120
+    max_attempts: 5
+    backoff_base_seconds: 5
+    backoff_max_seconds: 120
+    overlap_days: 7
+    backfill_from: "2024-01-01"
+
+  datacite:
+    enabled: true
+    entity: doi
+    page_size: 1000
+    # {window_start}/{window_end} are substituted by the extractor.
+    # VERIFY: confirm the updated-range query syntax against the live API.
+    query: "updated:[{window_start}T00:00:00Z TO {window_end}T23:59:59Z]"
+    rate_delay_seconds: 0.2
+    timeout_seconds: 90
+    max_attempts: 5
+    backoff_base_seconds: 2
+    backoff_max_seconds: 90
+    overlap_days: 2
+    backfill_from: "2024-01-01"
+
+  zenodo:
+    enabled: true
+    entity: record
+    metadata_prefix: oai_datacite
+    rate_delay_seconds: 1.0
+    timeout_seconds: 120
+    max_attempts: 5
+    backoff_base_seconds: 5
+    backoff_max_seconds: 120
+    overlap_days: 7
+    backfill_from: "2024-01-01"

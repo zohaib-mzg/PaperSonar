@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "papersonar"
-version = "0.2.0"
-description = "PaperSonar research intelligence warehouse - Phase 2 ingestion pipeline and Snowflake warehouse loader"
+version = "0.3.0"
+description = "PaperSonar research intelligence warehouse - strict ELT extraction and Snowflake transformation layers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
 dependencies = [
     "requests==2.34.2",
     "snowflake-connector-python==5.2.0",
+    "PyYAML==6.0.2",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +23,7 @@ dev = [
 
 [project.scripts]
 papersonar = "papersonar.cli:main"
+papersonar-extract = "runner.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -29,6 +31,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 120

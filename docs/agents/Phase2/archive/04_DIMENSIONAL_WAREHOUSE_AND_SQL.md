@@ -21,12 +21,12 @@ Dimensions:
 
 Facts:
 - `fact_publication`: one admitted canonical work; `publication_count = 1` if the approved schema uses that measure;
-- `fact_work_snapshot`: one canonical work × successful observation date/run, containing values that can change, such as observed citation count and access status;
+- `fact_work_snapshot`: one canonical work ├ù successful observation date/run, containing values that can change, such as observed citation count and access status;
 - `fact_citation`: one distinct directed citing-work/cited-work pair. Do not duplicate the same directed pair;
 - bridges:
-  - `bridge_work_topic`: one work × topic;
-  - `bridge_work_author`: one work × author;
-  - `bridge_work_institution`: one work × institution.
+  - `bridge_work_topic`: one work ├ù topic;
+  - `bridge_work_author`: one work ├ù author;
+  - `bridge_work_institution`: one work ├ù institution.
 
 ## Surrogate keys and unknown member
 
@@ -43,13 +43,13 @@ Facts:
 One admitted canonical work. Duplicate source records must not create multiple publication fact rows.
 
 ### Snapshot
-One canonical work × successful observation date/run according to the approved grain. If reruns occur on the same date, follow the approved run/date grain and use a deterministic uniqueness constraint. Do not add a snapshot for a failed or partial observation of that work.
+One canonical work ├ù successful observation date/run according to the approved grain. If reruns occur on the same date, follow the approved run/date grain and use a deterministic uniqueness constraint. Do not add a snapshot for a failed or partial observation of that work.
 
 ### Citation
 Directed edge from citing work to cited work. Do not reverse direction or count one edge twice. Reference endpoints that are outside the admitted corpus may be represented as reference stubs only if the approved model supports them. Document whether analytics use only edges with both endpoints admitted.
 
 ### Bridges
-One work × linked entity pair. Preserve all valid assignments. If allocation weights exist, validate them against the data dictionary's formula. Do not invent an allocation formula when one already exists.
+One work ├ù linked entity pair. Preserve all valid assignments. If allocation weights exist, validate them against the data dictionary's formula. Do not invent an allocation formula when one already exists.
 
 ## Loading order
 
@@ -87,7 +87,7 @@ Snowflake is the required production warehouse and the only approved production 
 
 ## SQL analytics
 
-Phase 2 may implement the approved SQL analytical questions and views if required by the course model. Use the recovered Q01–Q14 definitions in the project context. Preserve caveats:
+Phase 2 may implement the approved SQL analytical questions and views if required by the course model. Use the recovered Q01ΓÇôQ14 definitions in the project context. Preserve caveats:
 - cohort citation comparisons must use comparable publication years/types;
 - partial 2026 must not be compared with complete 2025;
 - sparse intersections are candidate signals, not proof of novelty;

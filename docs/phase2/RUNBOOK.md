@@ -1,5 +1,11 @@
 # PaperSonar Phase 2 — Operator Runbook
 
+> **Historical notice (2026-11-18):** Parts 1–4 remain useful for account and
+> secret setup, but the pipeline commands and object model below describe the
+> earlier implementation. For the current strict-ELT commands and seven-schema
+> model, use [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) and
+> [spec/19_IMPLEMENTATION_PLAN.md](spec/19_IMPLEMENTATION_PLAN.md).
+
 This is the operator-facing guide for running the Phase 2 ingestion pipeline.
 The production target is **Snowflake only** — there is no PostgreSQL, SQLite,
 or local-database fallback. Deterministic tests use a mocked Snowflake adapter
