@@ -30,6 +30,7 @@ sources:
     enabled: true
     entity: work
     page_size: 1000
+    max_records: 20000
     overlap_days: 2
     backfill_from: "2024-01-01"
   arxiv:
@@ -56,6 +57,8 @@ def test_settings_load_sources_and_runtime(config_path: Path) -> None:
     assert settings.raw_dir == Path("data/extract")
     assert settings.sources["openalex"].total_timeout_seconds == 900.0
     assert "total_timeout_seconds" not in settings.sources["openalex"].adapter
+    assert settings.sources["crossref"].max_records == 20_000
+    assert "max_records" not in settings.sources["crossref"].adapter
 
 
 def test_missing_snowflake_lists_variable_names_only(config_path: Path) -> None:
@@ -156,6 +159,13 @@ def test_incremental_catches_up_after_a_gap(config_path: Path) -> None:
         "2024-01-07",
         "2024-01-08",
     ]
+
+
+def test_non_positive_max_records_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "sources.yml"
+    path.write_text(CONFIG.replace("max_records: 20000", "max_records: 0"), encoding="utf-8")
+    with pytest.raises(ConfigurationError, match="max_records"):
+        Settings.from_env({}, config_path=str(path))
 
 
 def test_future_watermark_is_clamped_to_today(config_path: Path) -> None:

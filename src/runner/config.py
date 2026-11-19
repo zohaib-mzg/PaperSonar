@@ -77,6 +77,7 @@ class SourceSettings:
     overlap_days: int
     backfill_from: str
     total_timeout_seconds: float | None = None
+    max_records: int | None = None
     adapter: dict[str, Any] = field(default_factory=dict)
 
     def adapter_config(self) -> dict[str, Any]:
@@ -201,9 +202,16 @@ def _source_settings(name: str, block: dict[str, Any]) -> SourceSettings:
             "overlap_days",
             "backfill_from",
             "total_timeout_seconds",
+            "max_records",
         }
     }
     total_timeout = block.get("total_timeout_seconds")
+    max_records_raw = block.get("max_records")
+    max_records = int(max_records_raw) if max_records_raw is not None else None
+    if max_records is not None and max_records <= 0:
+        raise ConfigurationError(
+            f"{name}: max_records must be a positive integer or omitted"
+        )
     return SourceSettings(
         name=name,
         enabled=bool(block.get("enabled", True)),
@@ -217,6 +225,7 @@ def _source_settings(name: str, block: dict[str, Any]) -> SourceSettings:
         overlap_days=int(block.get("overlap_days", 2)),
         backfill_from=str(block.get("backfill_from", "2024-01-01")),
         total_timeout_seconds=float(total_timeout) if total_timeout is not None else None,
+        max_records=max_records,
         adapter=adapter_keys,
     )
 

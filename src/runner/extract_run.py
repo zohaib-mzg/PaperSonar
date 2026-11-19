@@ -3,7 +3,10 @@
 The runner is deliberately thin. It does not interpret source fields. It only
 enforces the extraction contract: deterministic shard names, checksum capture,
 staged-file verification, batch state transitions, and no watermark movement
-(watermarks advance inside Snowflake only after publication).
+(watermarks advance inside Snowflake only after publication). A configured
+``max_records`` is a first-class real-run limit: the batch is marked capped and
+its first unread cursor is preserved so a partial window cannot advance the
+source watermark.
 """
 
 from __future__ import annotations
@@ -47,6 +50,9 @@ class ExtractionReport:
     task_triggered: bool = False
     dry_run: bool = False
     skip_reason: str | None = None
+    record_limit: int | None = None
+    capped: bool = False
+    cap_cursor: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -64,6 +70,9 @@ class ExtractionReport:
             "task_triggered": self.task_triggered,
             "dry_run": self.dry_run,
             "skip_reason": self.skip_reason,
+            "record_limit": self.record_limit,
+            "capped": self.capped,
+            "cap_cursor": self.cap_cursor,
         }
 
 
@@ -80,8 +89,11 @@ def run_extraction(
     """Extract one window and (unless ``dry_run``) load it to the raw stage."""
     source = settings.require_source(source_name)
     adapter_config = source.adapter_config()
+    max_records = source.max_records
     # A page cap truncates the window. The runner would still mark the batch
     # loaded and clear its cursor, silently losing the rest of the window.
+    # max_records is different: it is a first-class real-run limit that leaves
+    # the cursor at the first unread record and blocks watermark advancement.
     if adapter_config.get("max_pages") and not dry_run:
         raise ConfigurationError(
             f"{source_name}: 'max_pages' is a test-only setting and requires --dry-run; "
@@ -96,6 +108,7 @@ def run_extraction(
         window_start=window.window_start,
         window_end=window.window_end,
         dry_run=dry_run,
+        record_limit=max_records,
     )
 
     snowflake = client
@@ -129,23 +142,38 @@ def run_extraction(
     # A crash can happen after the last shard is durable but before the final
     # LOADED transition. A non-empty batch with a NULL cursor has exhausted its
     # window, so finish the transition instead of re-fetching (and duplicating).
-    if (
-        resumable
-        and existing is not None
-        and int(existing.get("FILE_COUNT") or 0) > 0
-        and existing.get("CURSOR_END") is None
-    ):
-        report.file_count = int(existing["FILE_COUNT"])
+    # A capped batch with a non-NULL cursor keeps that cursor: it must never be
+    # mistaken for a complete window.
+    already_done = False
+    capped_done = False
+    if resumable and existing is not None:
+        existing_records = int(existing.get("RECORD_COUNT") or 0)
+        if bool(existing.get("IS_CAPPED")):
+            already_done = True
+            capped_done = True
+        elif int(existing.get("FILE_COUNT") or 0) > 0 and existing.get("CURSOR_END") is None:
+            already_done = True
+        elif max_records is not None and existing_records >= max_records:
+            already_done = True
+            capped_done = True
+    if already_done and existing is not None:
+        report.file_count = int(existing.get("FILE_COUNT") or 0)
         report.record_count = int(existing.get("RECORD_COUNT") or 0)
+        report.capped = capped_done
+        existing_cursor = existing.get("CURSOR_END")
+        report.cap_cursor = str(existing_cursor) if existing_cursor is not None else None
         report.status = "loaded"
         if snowflake is not None:
-            snowflake.mark_batch_loaded(batch_id, report.file_count, report.record_count)
+            snowflake.mark_batch_loaded(
+                batch_id, report.file_count, report.record_count, is_capped=capped_done
+            )
             if execute_task:
                 snowflake.execute_root_task()
                 report.task_triggered = True
         logger.info(
-            "%s: already exhausted (%d files, %d records); marked LOADED",
+            "%s: already %s (%d files, %d records); marked LOADED",
             batch_id,
+            "capped" if capped_done else "exhausted",
             report.file_count,
             report.record_count,
         )
@@ -177,6 +205,7 @@ def run_extraction(
             window_start=window.window_start,
             window_end=window.window_end,
             cursor_start=resume_cursor,
+            is_capped=False,
         )
 
     adapter = build_adapter(
@@ -209,7 +238,12 @@ def run_extraction(
         started_records,
     )
     try:
-        report.record_count, report.file_count = _extract_pages(
+        (
+            report.record_count,
+            report.file_count,
+            report.capped,
+            report.cap_cursor,
+        ) = _extract_pages(
             settings=settings,
             adapter=adapter,
             http=http,
@@ -222,11 +256,14 @@ def run_extraction(
             started_records=started_records,
             dry_run=dry_run,
             oversize=oversize,
+            max_records=max_records,
         )
         report.oversize_count = len(oversize)
         report.status = "extracted" if dry_run else "loaded"
         if not dry_run and snowflake is not None:
-            snowflake.mark_batch_loaded(batch_id, report.file_count, report.record_count)
+            snowflake.mark_batch_loaded(
+                batch_id, report.file_count, report.record_count, is_capped=report.capped
+            )
             if execute_task:
                 snowflake.execute_root_task()
                 report.task_triggered = True
@@ -254,7 +291,8 @@ def _extract_pages(
     started_records: int,
     dry_run: bool,
     oversize: list[dict[str, Any]],
-) -> tuple[int, int]:
+    max_records: int | None,
+) -> tuple[int, int, bool, str | None]:
     shard_number = started_shards + 1
     shard_start_cursor = resume_cursor
     pending_records: list[dict[str, Any]] = []
@@ -264,15 +302,26 @@ def _extract_pages(
     fetch_cursor = resume_cursor
     total_records = started_records
     files = started_shards
+    capped = False
+    cap_cursor: str | None = None
 
     for page in _pages_with_restart(adapter, http, window, resume_cursor, batch_id):
+        remaining = (
+            None
+            if max_records is None
+            else max_records - (total_records + len(pending_records))
+        )
+        if remaining is not None and remaining <= 0:
+            # A configured cap was already reached by flushed + pending records.
+            capped = True
+            cap_cursor = fetch_cursor
+            break
         request_params = (page.request or {}).get("params") or {}
         page_cursor = request_params.get("cursor")
         if page_cursor is None:
             page_cursor = fetch_cursor
 
         page_records: list[dict[str, Any]] = []
-        page_bytes = 0
         for record in page.records:
             if oversized(record):
                 merge_oversize(oversize, record)
@@ -287,7 +336,17 @@ def _extract_pages(
                     )
                 continue
             page_records.append(record)
-            page_bytes += len(ndjson_line(record)) + 1
+
+        # The cap is on loaded records, not raw API items. Oversized records are
+        # audited separately and never consume the limit.
+        if remaining is not None and len(page_records) >= remaining:
+            if len(page_records) > remaining or page.next_cursor:
+                capped = True
+                # A partially consumed page is re-read from its request cursor;
+                # a fully consumed page resumes at the API's next cursor.
+                cap_cursor = page_cursor if len(page_records) > remaining else page.next_cursor
+                page_records = page_records[:remaining]
+        page_bytes = sum(len(ndjson_line(record)) + 1 for record in page_records)
 
         # Roll before adding a page that would exceed the target. A page is the
         # smallest resumable cursor unit, so shards never cross a page boundary;
@@ -325,6 +384,8 @@ def _extract_pages(
         pending_records.extend(page_records)
         pending_bytes += page_bytes
         fetch_cursor = page.next_cursor
+        if capped:
+            break
 
     if pending_records:
         shard = _flush_shard(
@@ -334,7 +395,7 @@ def _extract_pages(
             shard_number=shard_number,
             records=pending_records,
             cursor_start=shard_start_cursor,
-            cursor_end=None,
+            cursor_end=cap_cursor if capped else None,
             snowflake=snowflake,
             dry_run=dry_run,
             report=report,
@@ -351,11 +412,24 @@ def _extract_pages(
         )
 
     if not dry_run and snowflake is not None:
-        # NULL is the durable "window exhausted" marker. Persist it even when
-        # the window produced no shard (zero records or all records oversized).
-        snowflake.update_batch_progress(batch_id, None, files, total_records)
+        # NULL is the durable "window exhausted" marker. A capped window keeps
+        # its first unread cursor so re-runs and publication can see it is partial.
+        snowflake.update_batch_progress(
+            batch_id,
+            cap_cursor if capped else None,
+            files,
+            total_records,
+            is_capped=capped,
+        )
+    if capped:
+        logger.info(
+            "%s: max_records=%d reached at %s; batch is CAPPED",
+            batch_id,
+            max_records,
+            cap_cursor,
+        )
 
-    return total_records, files
+    return total_records, files, capped, cap_cursor
 
 
 def _pages_with_restart(

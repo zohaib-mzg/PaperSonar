@@ -1,16 +1,18 @@
 -- =============================================================================
 -- Purpose: Publication gate. Publish the active batch only when DQ has run and
---          no CRITICAL rule failed; then advance the source watermark.
+--          no CRITICAL rule failed; advance the source watermark only when the
+--          window was not capped by max_records.
 -- Inputs: CURRENT_BATCH, DQ_RESULT, BATCH, SOURCE_WATERMARK.
--- Outputs: PUBLISHED_BATCH row, BATCH status PUBLISHED, watermark update,
---          LINEAGE_EVENT.
+-- Outputs: PUBLISHED_BATCH row, BATCH status PUBLISHED, watermark update for
+--          complete windows, LINEAGE_EVENT.
 -- Idempotent: Yes - MERGE on BATCH_ID and repeatable watermark update.
 -- Owner: PAPERSONAR_TRANSFORMER
 -- Parameters: None.
 -- Cost: Small metadata statements only.
 -- =============================================================================
 -- A missing DQ result set blocks publication. Publication never infers success
--- from the absence of failures.
+-- from the absence of failures. A capped batch is published for visibility but
+-- never advances the watermark, because part of its window was not read.
 
 CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_REPORTING.SP_PUBLISH_BATCH()
 RETURNS VARCHAR
@@ -28,6 +30,8 @@ DECLARE
   expected_checks    NUMBER DEFAULT 0;
   critical_failures  NUMBER DEFAULT 0;
   total_failures     NUMBER DEFAULT 0;
+  is_capped          BOOLEAN DEFAULT FALSE;
+  publish_result     VARCHAR DEFAULT 'PUBLISHED';
 BEGIN
   SELECT BATCH_ID INTO :batch_id
   FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH
@@ -78,16 +82,29 @@ BEGIN
     RETURN 'BLOCKED_DQ';
   END IF;
 
+  SELECT SOURCE_NAME, ENTITY_NAME, EXTRACTION_MODE, WINDOW_START, WINDOW_END,
+         IS_CAPPED
+    INTO :source_name, :entity_name, :extraction_mode, :window_start, :window_end,
+         :is_capped
+  FROM PAPERSONAR.PROJECT_AUDIT.BATCH
+  WHERE BATCH_ID = :batch_id;
+
   MERGE INTO PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH t
   USING (
     SELECT
       :batch_id AS BATCH_ID,
       CURRENT_USER() AS PUBLISHED_BY,
-      'critical_failures=0;total_failures=' || :total_failures AS DQ_SUMMARY
+      'critical_failures=0;total_failures=' || :total_failures AS DQ_SUMMARY,
+      COALESCE(:is_capped, FALSE) AS IS_CAPPED
   ) s
   ON t.BATCH_ID = s.BATCH_ID
-  WHEN NOT MATCHED THEN INSERT (BATCH_ID, PUBLISHED_BY, DQ_SUMMARY)
-    VALUES (s.BATCH_ID, s.PUBLISHED_BY, s.DQ_SUMMARY);
+  WHEN MATCHED THEN UPDATE SET
+    t.DQ_SUMMARY = s.DQ_SUMMARY,
+    t.IS_CAPPED = s.IS_CAPPED,
+    t.PUBLISHED_AT = CURRENT_TIMESTAMP()
+  WHEN NOT MATCHED THEN INSERT
+    (BATCH_ID, PUBLISHED_AT, PUBLISHED_BY, DQ_SUMMARY, IS_CAPPED)
+    VALUES (s.BATCH_ID, CURRENT_TIMESTAMP(), s.PUBLISHED_BY, s.DQ_SUMMARY, s.IS_CAPPED);
 
   UPDATE PAPERSONAR.PROJECT_AUDIT.BATCH
      SET STATUS = 'PUBLISHED',
@@ -95,45 +112,46 @@ BEGIN
          UPDATED_AT = CURRENT_TIMESTAMP()
    WHERE BATCH_ID = :batch_id;
 
-  SELECT SOURCE_NAME, ENTITY_NAME, EXTRACTION_MODE, WINDOW_START, WINDOW_END
-    INTO :source_name, :entity_name, :extraction_mode, :window_start, :window_end
-  FROM PAPERSONAR.PROJECT_AUDIT.BATCH
-  WHERE BATCH_ID = :batch_id;
-
-  -- Incremental windows are updated-date windows, so WINDOW_END is a valid
-  -- updated-date watermark. A full backfill window is a publication-date
-  -- window; using its WINDOW_END would move the change-feed watermark years
-  -- backwards. Stamp a full backfill with the publication date instead.
-  MERGE INTO PAPERSONAR.PROJECT_AUDIT.SOURCE_WATERMARK t
-  USING (
-    SELECT
-      :source_name AS SOURCE_NAME,
-      :entity_name AS ENTITY_NAME,
-      TO_VARCHAR(
-        IFF(UPPER(:extraction_mode) = 'FULL', CURRENT_DATE(), :window_end)
-      ) AS WATERMARK_VALUE,
-      :window_start AS WINDOW_START,
-      :window_end AS WINDOW_END,
-      :batch_id AS LAST_BATCH_ID
-  ) s
-  ON t.SOURCE_NAME = s.SOURCE_NAME AND t.ENTITY_NAME = s.ENTITY_NAME
-  WHEN MATCHED THEN UPDATE SET
-    t.WATERMARK_VALUE = TO_VARCHAR(GREATEST(
-      COALESCE(TRY_TO_DATE(t.WATERMARK_VALUE), TO_DATE('1900-01-01')),
-      COALESCE(TRY_TO_DATE(s.WATERMARK_VALUE), TO_DATE('1900-01-01'))
-    )),
-    t.WINDOW_START = s.WINDOW_START,
-    t.WINDOW_END = s.WINDOW_END,
-    t.LAST_BATCH_ID = s.LAST_BATCH_ID,
-    t.LAST_SUCCESS_AT = CURRENT_TIMESTAMP(),
-    t.STATUS = 'PUBLISHED',
-    t.UPDATED_AT = CURRENT_TIMESTAMP()
-  WHEN NOT MATCHED THEN INSERT
-    (SOURCE_NAME, ENTITY_NAME, WATERMARK_VALUE, WINDOW_START, WINDOW_END,
-     OVERLAP_DAYS, CURSOR, LAST_BATCH_ID, LAST_SUCCESS_AT, STATUS, UPDATED_AT)
-    VALUES (s.SOURCE_NAME, s.ENTITY_NAME, s.WATERMARK_VALUE, s.WINDOW_START,
-            s.WINDOW_END, 0, NULL, s.LAST_BATCH_ID, CURRENT_TIMESTAMP(),
-            'PUBLISHED', CURRENT_TIMESTAMP());
+  IF (COALESCE(:is_capped, FALSE)) THEN
+    -- Publish the partial data for visibility, but do not claim the window is
+    -- complete. Leaving the watermark untouched prevents silent data loss.
+    publish_result := 'PUBLISHED_CAPPED';
+  ELSE
+    -- Incremental windows are updated-date windows, so WINDOW_END is a valid
+    -- updated-date watermark. A full backfill window is a publication-date
+    -- window; using its WINDOW_END would move the change-feed watermark years
+    -- backwards. Stamp a full backfill with the publication date instead.
+    MERGE INTO PAPERSONAR.PROJECT_AUDIT.SOURCE_WATERMARK t
+    USING (
+      SELECT
+        :source_name AS SOURCE_NAME,
+        :entity_name AS ENTITY_NAME,
+        TO_VARCHAR(
+          IFF(UPPER(:extraction_mode) = 'FULL', CURRENT_DATE(), :window_end)
+        ) AS WATERMARK_VALUE,
+        :window_start AS WINDOW_START,
+        :window_end AS WINDOW_END,
+        :batch_id AS LAST_BATCH_ID
+    ) s
+    ON t.SOURCE_NAME = s.SOURCE_NAME AND t.ENTITY_NAME = s.ENTITY_NAME
+    WHEN MATCHED THEN UPDATE SET
+      t.WATERMARK_VALUE = TO_VARCHAR(GREATEST(
+        COALESCE(TRY_TO_DATE(t.WATERMARK_VALUE), TO_DATE('1900-01-01')),
+        COALESCE(TRY_TO_DATE(s.WATERMARK_VALUE), TO_DATE('1900-01-01'))
+      )),
+      t.WINDOW_START = s.WINDOW_START,
+      t.WINDOW_END = s.WINDOW_END,
+      t.LAST_BATCH_ID = s.LAST_BATCH_ID,
+      t.LAST_SUCCESS_AT = CURRENT_TIMESTAMP(),
+      t.STATUS = 'PUBLISHED',
+      t.UPDATED_AT = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN INSERT
+      (SOURCE_NAME, ENTITY_NAME, WATERMARK_VALUE, WINDOW_START, WINDOW_END,
+       OVERLAP_DAYS, CURSOR, LAST_BATCH_ID, LAST_SUCCESS_AT, STATUS, UPDATED_AT)
+      VALUES (s.SOURCE_NAME, s.ENTITY_NAME, s.WATERMARK_VALUE, s.WINDOW_START,
+              s.WINDOW_END, 0, NULL, s.LAST_BATCH_ID, CURRENT_TIMESTAMP(),
+              'PUBLISHED', CURRENT_TIMESTAMP());
+  END IF;
 
   MERGE INTO PAPERSONAR.PROJECT_AUDIT.LINEAGE_EVENT t
   USING (
@@ -158,9 +176,9 @@ BEGIN
     VALUES (s.EVENT_ID, s.BATCH_ID, s.LAYER, s.OBJECT_NAME, s.EVENT_TYPE,
             s.INPUT_COUNT, s.OUTPUT_COUNT, CURRENT_TIMESTAMP());
 
-  RETURN 'PUBLISHED';
+  RETURN :publish_result;
 END;
 $$;
 
 COMMENT ON PROCEDURE PAPERSONAR.PROJECT_REPORTING.SP_PUBLISH_BATCH()
-  IS 'Fail-closed publication gate and watermark advancement for the active batch';
+  IS 'Fail-closed publication gate; watermark advances only for complete windows';

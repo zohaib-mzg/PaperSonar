@@ -335,12 +335,14 @@ If the DQ gate passes, the batch is published:
 
 - `PUBLISHED_BATCH` gets a row.
 - The batch becomes `PUBLISHED`.
-- The source watermark advances to the last good change point.
+- The source watermark advances to the last good change point **only for a complete window**.
 - Reporting views can now expose the data.
 
 For a full/backfill batch, the watermark is stamped with the current publication
 date instead of the publication-date window end, because a publication-date range
-is not a change-feed position.
+is not a change-feed position. A batch stopped early by `max_records` has
+`IS_CAPPED = TRUE` and is published for visibility, but its watermark does not
+move; the unread remainder is never treated as processed.
 
 ### Step 12 — Finalizer
 

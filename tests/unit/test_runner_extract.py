@@ -24,7 +24,7 @@ sources:
     enabled: true
     entity: work
     page_size: 100
-    filter: ""
+{max_records_line}    filter: ""
     overlap_days: 3
     backfill_from: "2024-01-01"
 """
@@ -45,8 +45,10 @@ class FakeSnowflake:
         self.batch = batch
         self.registered: dict[str, Any] | None = None
         self.progress: list[tuple[str | None, int, int]] = []
+        self.progress_capped: list[bool] = []
         self.manifests: list[dict[str, Any]] = []
         self.loaded: list[tuple[int, int]] = []
+        self.loaded_capped: list[bool] = []
         self.failed: str | None = None
         self.cleared: list[tuple[str, str]] = []
         self.puts: list[tuple[str, str]] = []
@@ -59,12 +61,21 @@ class FakeSnowflake:
         self.registered = kwargs
 
     def update_batch_progress(
-        self, batch_id: str, cursor: str | None, file_count: int, record_count: int
+        self,
+        batch_id: str,
+        cursor: str | None,
+        file_count: int,
+        record_count: int,
+        is_capped: bool = False,
     ) -> None:
         self.progress.append((cursor, file_count, record_count))
+        self.progress_capped.append(is_capped)
 
-    def mark_batch_loaded(self, batch_id: str, file_count: int, record_count: int) -> None:
+    def mark_batch_loaded(
+        self, batch_id: str, file_count: int, record_count: int, is_capped: bool = False
+    ) -> None:
         self.loaded.append((file_count, record_count))
+        self.loaded_capped.append(is_capped)
 
     def mark_batch_failed(self, batch_id: str, error_summary: str) -> None:
         self.failed = error_summary
@@ -96,9 +107,15 @@ class FakeSnowflake:
         self.oversize.append(kwargs)
 
 
-def _settings(tmp_path: Path) -> Settings:
+def _settings(tmp_path: Path, *, max_records: int | None = None) -> Settings:
     path = tmp_path / "sources.yml"
-    path.write_text(CONFIG.format(raw_dir=(tmp_path / "raw").as_posix()), encoding="utf-8")
+    max_records_line = f"    max_records: {max_records}\n" if max_records is not None else ""
+    path.write_text(
+        CONFIG.format(
+            raw_dir=(tmp_path / "raw").as_posix(), max_records_line=max_records_line
+        ),
+        encoding="utf-8",
+    )
     return Settings.from_env({}, config_path=str(path))
 
 
@@ -310,3 +327,155 @@ def test_empty_window_loads_zero_rows_and_exits_cleanly(
     assert snowflake.manifests == []
     assert snowflake.progress[-1] == (None, 0, 0)
     assert snowflake.loaded == [(0, 0)]
+
+
+def test_max_records_caps_real_run_and_keeps_first_unread_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, max_records=3)
+    adapter = FakeAdapter(
+        [
+            Page(
+                records=[{"id": "W1"}, {"id": "W2"}],
+                next_cursor="p2",
+                request={"params": {"cursor": "start"}},
+                records_seen=2,
+            ),
+            Page(
+                records=[{"id": "W3"}, {"id": "W4"}],
+                next_cursor="p3",
+                request={"params": {"cursor": "p2"}},
+                records_seen=2,
+            ),
+        ]
+    )
+    monkeypatch.setattr(extract_run, "build_adapter", lambda *args, **kwargs: adapter)
+    window = FetchWindow("openalex", "work", "2024-01-01", "2024-01-02", "incremental")
+    snowflake = FakeSnowflake()
+
+    report = extract_run.run_extraction(
+        settings, "openalex", window, execute_task=False, client=snowflake
+    )
+
+    assert report.status == "loaded"
+    assert report.record_limit == 3
+    assert report.record_count == 3
+    assert report.file_count == 1
+    assert report.capped is True
+    assert report.cap_cursor == "p2"
+    assert adapter.calls == [None]
+    assert sum(item["record_count"] for item in snowflake.manifests) == 3
+    assert snowflake.manifests[-1]["cursor_end"] == "p2"
+    assert snowflake.progress[-1] == ("p2", 1, 3)
+    assert snowflake.progress_capped[-1] is True
+    assert snowflake.loaded == [(1, 3)]
+    assert snowflake.loaded_capped == [True]
+    local = settings.raw_dir / report.shards[0]["file"]
+    with gzip.open(local, "rt", encoding="utf-8") as handle:
+        assert [json.loads(line) for line in handle] == [
+            {"id": "W1"},
+            {"id": "W2"},
+            {"id": "W3"},
+        ]
+
+
+def test_max_records_at_page_boundary_keeps_next_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, max_records=2)
+    adapter = FakeAdapter(
+        [
+            Page(
+                records=[{"id": "W1"}, {"id": "W2"}],
+                next_cursor="p2",
+                request={"params": {"cursor": "start"}},
+                records_seen=2,
+            ),
+            Page(
+                records=[{"id": "W3"}],
+                next_cursor=None,
+                request={"params": {"cursor": "p2"}},
+                records_seen=1,
+            ),
+        ]
+    )
+    monkeypatch.setattr(extract_run, "build_adapter", lambda *args, **kwargs: adapter)
+    window = FetchWindow("openalex", "work", "2024-01-01", "2024-01-02", "incremental")
+    snowflake = FakeSnowflake()
+
+    report = extract_run.run_extraction(
+        settings, "openalex", window, execute_task=False, client=snowflake
+    )
+
+    assert report.capped is True
+    assert report.cap_cursor == "p2"
+    assert report.record_count == 2
+    assert snowflake.progress[-1] == ("p2", 1, 2)
+    assert snowflake.loaded_capped == [True]
+
+
+def test_exact_max_records_with_no_next_page_is_complete(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, max_records=3)
+    adapter = FakeAdapter(
+        [
+            Page(
+                records=[{"id": "W1"}, {"id": "W2"}],
+                next_cursor="p2",
+                request={"params": {"cursor": "start"}},
+                records_seen=2,
+            ),
+            Page(
+                records=[{"id": "W3"}],
+                next_cursor=None,
+                request={"params": {"cursor": "p2"}},
+                records_seen=1,
+            ),
+        ]
+    )
+    monkeypatch.setattr(extract_run, "build_adapter", lambda *args, **kwargs: adapter)
+    window = FetchWindow("openalex", "work", "2024-01-01", "2024-01-02", "incremental")
+    snowflake = FakeSnowflake()
+
+    report = extract_run.run_extraction(
+        settings, "openalex", window, execute_task=False, client=snowflake
+    )
+
+    assert report.capped is False
+    assert report.cap_cursor is None
+    assert report.record_count == 3
+    assert snowflake.progress[-1] == (None, 1, 3)
+    assert snowflake.progress_capped[-1] is False
+    assert snowflake.loaded_capped == [False]
+
+
+def test_interrupted_capped_batch_is_finalized_without_refetching(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, max_records=3)
+    adapter = FakeAdapter(
+        [Page(records=[{"id": "W4"}], next_cursor=None, request={}, records_seen=1)]
+    )
+    monkeypatch.setattr(extract_run, "build_adapter", lambda *args, **kwargs: adapter)
+    window = FetchWindow("openalex", "work", "2024-01-01", "2024-01-02", "incremental")
+    snowflake = FakeSnowflake(
+        {
+            "STATUS": "FAILED",
+            "CURSOR_END": "p2",
+            "FILE_COUNT": 1,
+            "RECORD_COUNT": 3,
+            "IS_CAPPED": True,
+        }
+    )
+
+    report = extract_run.run_extraction(
+        settings, "openalex", window, execute_task=False, client=snowflake
+    )
+
+    assert adapter.calls == []
+    assert report.status == "loaded"
+    assert report.capped is True
+    assert report.cap_cursor == "p2"
+    assert snowflake.loaded == [(1, 3)]
+    assert snowflake.loaded_capped == [True]

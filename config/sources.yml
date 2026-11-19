@@ -53,7 +53,12 @@ sources:
     max_attempts: 5
     backoff_base_seconds: 2
     backoff_max_seconds: 90
-    overlap_days: 2
+    # One Crossref index-date day is ~800k-900k works. Keep the real daily run
+    # inside the 240-minute GitHub job by reading a bounded prefix. The runner
+    # marks the batch CAPPED and Snowflake does not advance the watermark, so
+    # the unread remainder is never treated as complete.
+    max_records: 20000
+    overlap_days: 0
     backfill_from: "2026-11-01"
 
   arxiv:
