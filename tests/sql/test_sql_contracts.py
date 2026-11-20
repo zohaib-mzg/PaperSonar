@@ -209,7 +209,9 @@ def test_author_keys_are_json_null_safe() -> None:
 
 def test_capped_windows_are_visible_and_do_not_advance_watermark() -> None:
     patch = _read(SQL_ROOT / "01_staging" / "00_audit_cap_columns.sql")
-    assert patch.count("ADD COLUMN IF NOT EXISTS IS_CAPPED BOOLEAN DEFAULT FALSE;") == 2
+    assert patch.count("ADD COLUMN IS_CAPPED BOOLEAN DEFAULT FALSE;") == 2
+    assert "INFORMATION_SCHEMA.COLUMNS" in patch
+    assert "EXECUTE IMMEDIATE $$" in patch
 
     publish = _read(SQL_ROOT / "07_reporting" / "03_publish_batch.sql")
     assert "IS_CAPPED" in publish
