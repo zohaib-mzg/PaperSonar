@@ -12,7 +12,7 @@ on:
     # the guard fails closed for an explicit OpenAlex run and skips OpenAlex in
     # an all-source run until that entitlement is confirmed. The Snowflake task
     # graph is drained once after all sources finish loading.
-    - cron: "30 2 * * *"
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
       source:
