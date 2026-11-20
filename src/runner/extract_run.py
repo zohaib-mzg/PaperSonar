@@ -85,11 +85,15 @@ def run_extraction(
     force: bool = False,
     execute_task: bool = True,
     client: SnowflakeClient | None = None,
+    disable_cap: bool = False,
 ) -> ExtractionReport:
     """Extract one window and (unless ``dry_run``) load it to the raw stage."""
     source = settings.require_source(source_name)
     adapter_config = source.adapter_config()
-    max_records = source.max_records
+    # Full/backfill mode is the one-time 100k+ load and is never capped.
+    max_records = None if disable_cap else (
+        source.max_records if window.mode == "incremental" else None
+    )
     # A page cap truncates the window. The runner would still mark the batch
     # loaded and clear its cursor, silently losing the rest of the window.
     # max_records is different: it is a first-class real-run limit that leaves
@@ -117,7 +121,11 @@ def run_extraction(
         if snowflake is None:
             snowflake = SnowflakeClient.from_settings(settings)
         existing = snowflake.get_batch(batch_id)
-        if existing and existing["STATUS"] in ("LOADED", "PROCESSING", "PUBLISHED") and not force:
+        capped_published = bool(existing and existing.get("IS_CAPPED")
+                                and existing["STATUS"] == "PUBLISHED"
+                                and window.resume_cursor)
+        if (existing and existing["STATUS"] in ("LOADED", "PROCESSING", "PUBLISHED")
+                and not force and not capped_published):
             report.status = "skipped"
             report.skip_reason = (
                 f"batch already {existing['STATUS']}; rerun with --force to re-extract"
@@ -130,12 +138,12 @@ def run_extraction(
                 "an in-flight or published batch is immutable"
             )
 
-    # Resume only an interrupted batch. --force always starts a clean window so
-    # a changed filter or page size cannot resume against a stale cursor.
+    # Resume an interrupted batch or a capped published window. --force always
+    # starts a clean window so changed filters cannot resume against a stale cursor.
     resumable = (
         not dry_run
         and existing is not None
-        and existing["STATUS"] in ("EXTRACTING", "FAILED")
+        and (existing["STATUS"] in ("EXTRACTING", "FAILED") or capped_published)
         and not force
     )
 
@@ -148,12 +156,16 @@ def run_extraction(
     capped_done = False
     if resumable and existing is not None:
         existing_records = int(existing.get("RECORD_COUNT") or 0)
-        if bool(existing.get("IS_CAPPED")):
+        if bool(existing.get("IS_CAPPED")) and not window.resume_cursor:
             already_done = True
             capped_done = True
         elif int(existing.get("FILE_COUNT") or 0) > 0 and existing.get("CURSOR_END") is None:
             already_done = True
-        elif max_records is not None and existing_records >= max_records:
+        elif (
+            max_records is not None
+            and existing_records >= max_records
+            and not window.resume_cursor
+        ):
             already_done = True
             capped_done = True
     if already_done and existing is not None:
@@ -179,11 +191,9 @@ def run_extraction(
         )
         return report
 
-    resume_cursor = (
-        str(existing["CURSOR_END"])
-        if resumable and existing is not None and existing.get("CURSOR_END")
-        else None
-    )
+    resume_cursor = window.resume_cursor
+    if resumable and existing is not None and existing.get("CURSOR_END"):
+        resume_cursor = str(existing["CURSOR_END"])
     started_shards = (
         int(existing.get("FILE_COUNT") or 0) if resumable and existing is not None else 0
     )
@@ -301,6 +311,9 @@ def _extract_pages(
     # shard is rolled before this page's records are added.
     fetch_cursor = resume_cursor
     total_records = started_records
+    # The cap is per run, not per cumulative batch: a resumed capped window gets
+    # a fresh 30k budget while FILE_COUNT/RECORD_COUNT stay cumulative.
+    run_records = 0
     files = started_shards
     capped = False
     cap_cursor: str | None = None
@@ -309,7 +322,7 @@ def _extract_pages(
         remaining = (
             None
             if max_records is None
-            else max_records - (total_records + len(pending_records))
+            else max_records - (run_records + len(pending_records))
         )
         if remaining is not None and remaining <= 0:
             # A configured cap was already reached by flushed + pending records.
@@ -366,6 +379,7 @@ def _extract_pages(
             )
             files += 1
             total_records += shard.record_count
+            run_records += shard.record_count
             report.shards.append(
                 {
                     "file": shard.relative_path,
@@ -402,6 +416,7 @@ def _extract_pages(
         )
         files += 1
         total_records += shard.record_count
+        run_records += shard.record_count
         report.shards.append(
             {
                 "file": shard.relative_path,
@@ -529,6 +544,7 @@ def plan_and_run(
     dry_run: bool = False,
     force: bool = False,
     execute_task: bool = True,
+    disable_cap: bool = False,
 ) -> list[ExtractionReport]:
     """Run every planned window sequentially and return per-window reports.
 
@@ -543,8 +559,15 @@ def plan_and_run(
     try:
         if not dry_run:
             client = SnowflakeClient.from_settings(settings)
-        reports = [
-            run_extraction(
+        source = settings.require_source(source_name)
+        # A 30k cap is per source *run*. Only the oldest window is attempted;
+        # remaining windows wait for the next daily run, which resumes from the
+        # cursor published by a capped batch.
+        if mode == "incremental" and source.max_records and not disable_cap:
+            windows = windows[:1]
+        reports = []
+        for window in windows:
+            report = run_extraction(
                 settings,
                 source_name,
                 window,
@@ -552,9 +575,12 @@ def plan_and_run(
                 force=force,
                 execute_task=False,
                 client=client,
+                disable_cap=disable_cap,
             )
-            for window in windows
-        ]
+            reports.append(report)
+            if report.capped:
+                logger.info("%s: source cap reached; stopping remaining windows", source_name)
+                break
         if execute_task and not dry_run and client is not None:
             rounds = client.drain_batches()
             if reports:

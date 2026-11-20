@@ -332,12 +332,12 @@ BEGIN
         THEN REGEXP_REPLACE(topic.value:id::STRING, '^https?://openalex[.]org/', '')
       ELSE NULL
     END AS TOPIC_ID,
-    COALESCE(
+    LEFT(COALESCE(
       topic.value:display_name::STRING,
       topic.value:subject::STRING,
       topic.value:name::STRING,
       topic.value::STRING
-    ) AS TOPIC_NAME
+    ), 500) AS TOPIC_NAME
   FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o,
   LATERAL FLATTEN(input => o.TOPICS) topic
   WHERE o.BATCH_ID = :batch_id

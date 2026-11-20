@@ -45,11 +45,17 @@ def test_extract_workflow_reads_openalex_plan_variable() -> None:
     assert "vars.OPENALEX_DAILY_SYNC" in confirmation
 
 
-def test_extract_workflow_drains_task_graph_after_all_sources() -> None:
-    steps = _load("extract-load.yml")["jobs"]["extract"]["steps"]
+def test_extract_workflow_drains_task_graph_in_a_separate_job() -> None:
+    workflow = _load("extract-load.yml")
+    steps = workflow["jobs"]["extract"]["steps"]
     extract_step = next(step for step in steps if step.get("name") == "Extract source windows")
     assert "SKIP_OPENALEX" in extract_step["run"]
-    assert "python -m runner.cli trigger --drain" in extract_step["run"]
+    assert "trigger --drain" not in extract_step["run"]
+    drain = workflow["jobs"]["drain"]
+    assert drain["needs"] == "extract"
+    assert drain["timeout-minutes"] < workflow["jobs"]["extract"]["timeout-minutes"]
+    drain_step = next(step for step in drain["steps"] if step.get("name") == "Drain loaded batches")
+    assert "python -m runner.cli trigger --drain" in drain_step["run"]
 
 
 def test_deploy_workflow_deploys_on_main_with_approval_environment() -> None:

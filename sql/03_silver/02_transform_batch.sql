@@ -162,34 +162,34 @@ BEGIN
       b.BATCH_ID,
       REGEXP_SUBSTR(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?doi[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?doi[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       COALESCE(
         REGEXP_SUBSTR(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?id[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?id[^>]*>([^<]+)<', 1, 1, 'e', 2
         ),
         SPLIT_PART(b.PAYLOAD:identifier::STRING, ':', -1)
       ),
       REGEXP_SUBSTR(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?title[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?title[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       REGEXP_SUBSTR(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?created[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?created[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       TRY_TO_DATE(
         REGEXP_SUBSTR(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?created[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?created[^>]*>([^<]+)<', 1, 1, 'e', 2
         )
       ),
       YEAR(
         TRY_TO_DATE(
           REGEXP_SUBSTR(
             b.PAYLOAD:metadata_xml::STRING,
-            '<(?:[A-Za-z0-9_]+:)?created[^>]*>([^<]+)<', 1, 1, 'e', 1
+            '<([A-Za-z0-9_]+:)?created[^>]*>([^<]+)<', 1, 1, 'e', 2
           )
         )
       ),
@@ -201,7 +201,7 @@ BEGIN
       GET(
         REGEXP_SUBSTR_ALL(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?author[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?author[^>]*>([^<]+)<', 1, 1, 'e', 2
         ),
         0
       )::STRING,
@@ -209,13 +209,13 @@ BEGIN
       SPLIT(
         REGEXP_SUBSTR(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?categories[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?categories[^>]*>([^<]+)<', 1, 1, 'e', 2
         ),
         ' '
       ),
       REGEXP_SUBSTR_ALL(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?author[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?author[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       NULL,
       NULL,
@@ -272,39 +272,39 @@ BEGIN
       b.BATCH_ID,
       REGEXP_SUBSTR(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?identifier[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?identifier[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       NULL,
       REGEXP_SUBSTR(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?title[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?title[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       COALESCE(
         REGEXP_SUBSTR(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?date[^>]*dateType="Issued"[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?date[^>]*dateType="Issued"[^>]*>([^<]+)<', 1, 1, 'e', 2
         ),
         REGEXP_SUBSTR(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?date[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?date[^>]*>([^<]+)<', 1, 1, 'e', 2
         )
       ),
       TRY_TO_DATE(
         COALESCE(
           REGEXP_SUBSTR(
             b.PAYLOAD:metadata_xml::STRING,
-            '<(?:[A-Za-z0-9_]+:)?date[^>]*dateType="Issued"[^>]*>([^<]+)<', 1, 1, 'e', 1
+            '<([A-Za-z0-9_]+:)?date[^>]*dateType="Issued"[^>]*>([^<]+)<', 1, 1, 'e', 2
           ),
           REGEXP_SUBSTR(
             b.PAYLOAD:metadata_xml::STRING,
-            '<(?:[A-Za-z0-9_]+:)?date[^>]*>([^<]+)<', 1, 1, 'e', 1
+            '<([A-Za-z0-9_]+:)?date[^>]*>([^<]+)<', 1, 1, 'e', 2
           )
         )
       ),
       TRY_TO_NUMBER(
         REGEXP_SUBSTR(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?publicationYear[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?publicationYear[^>]*>([^<]+)<', 1, 1, 'e', 2
         )
       ),
       REGEXP_SUBSTR(
@@ -313,7 +313,7 @@ BEGIN
       ),
       REGEXP_SUBSTR(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?publisher[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?publisher[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       NULL,
       NULL,
@@ -321,18 +321,18 @@ BEGIN
       GET(
         REGEXP_SUBSTR_ALL(
           b.PAYLOAD:metadata_xml::STRING,
-          '<(?:[A-Za-z0-9_]+:)?creatorName[^>]*>([^<]+)<', 1, 1, 'e', 1
+          '<([A-Za-z0-9_]+:)?creatorName[^>]*>([^<]+)<', 1, 1, 'e', 2
         ),
         0
       )::STRING,
       NULL,
       REGEXP_SUBSTR_ALL(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?subject[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?subject[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       REGEXP_SUBSTR_ALL(
         b.PAYLOAD:metadata_xml::STRING,
-        '<(?:[A-Za-z0-9_]+:)?creatorName[^>]*>([^<]+)<', 1, 1, 'e', 1
+        '<([A-Za-z0-9_]+:)?creatorName[^>]*>([^<]+)<', 1, 1, 'e', 2
       ),
       NULL,
       NULL,

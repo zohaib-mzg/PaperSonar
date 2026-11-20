@@ -379,6 +379,49 @@ def test_max_records_caps_real_run_and_keeps_first_unread_cursor(
         ]
 
 
+def test_capped_published_batch_resumes_from_persisted_cursor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = _settings(tmp_path, max_records=3)
+    adapter = FakeAdapter(
+        [
+            Page(
+                records=[{"id": "W4"}],
+                next_cursor=None,
+                request={"params": {"cursor": "p2"}},
+                records_seen=1,
+            )
+        ]
+    )
+    monkeypatch.setattr(extract_run, "build_adapter", lambda *args, **kwargs: adapter)
+    window = FetchWindow(
+        "openalex", "work", "2024-01-01", "2024-01-02", "incremental", resume_cursor="p2"
+    )
+    snowflake = FakeSnowflake(
+        {
+            "BATCH_ID": "batch",
+            "SOURCE_NAME": "openalex",
+            "ENTITY_NAME": "work",
+            "STATUS": "PUBLISHED",
+            "CURSOR_END": "p2",
+            "FILE_COUNT": 1,
+            "RECORD_COUNT": 3,
+            "IS_CAPPED": True,
+        }
+    )
+
+    report = extract_run.run_extraction(
+        settings, "openalex", window, execute_task=False, client=snowflake
+    )
+
+    assert adapter.calls == ["p2"]
+    assert report.status == "loaded"
+    assert report.record_count == 4
+    assert report.capped is False
+    assert snowflake.cleared == []
+    assert snowflake.registered["cursor_start"] == "p2"
+
+
 def test_max_records_at_page_boundary_keeps_next_cursor(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

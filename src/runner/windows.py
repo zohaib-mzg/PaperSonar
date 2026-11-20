@@ -8,6 +8,7 @@ advancement (inside Snowflake) decides whether the window is complete.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import Any
 
 from extract.base import FetchWindow
 from runner.config import ConfigurationError, Settings
@@ -23,6 +24,7 @@ def plan_windows(
     until_date: str | None = None,
     today: date | None = None,
     watermark_end: str | None = None,
+    watermark_state: dict[str, Any] | None = None,
 ) -> list[FetchWindow]:
     """Return the bounded windows for one source and run mode.
 
@@ -34,6 +36,10 @@ def plan_windows(
     if mode not in ("full", "incremental"):
         raise ConfigurationError(f"Unknown extraction mode {mode!r}; use full or incremental")
     source = settings.require_source(source_name)
+    if mode == "incremental" and watermark_state and _is_capped(watermark_state):
+        # A capped window is not finished. Replay the exact same logical window
+        # and cursor until it is exhausted; only then may planning move on.
+        return [_resume_window(source_name, source, watermark_state)]
     current = today or date.today()
     start_override = _date_or_none(from_date)
     end_override = _date_or_none(until_date) or current
@@ -147,7 +153,10 @@ def _incremental_start(
         except ValueError:
             published = None
         if published is not None:
-            base = min(published, end_override)
+            # With zero overlap the watermark day is already complete; start at
+            # the next day. With overlap, re-read the overlap days intentionally.
+            base = published + timedelta(days=1) if source.overlap_days == 0 else published
+            base = min(base, end_override)
     start = base - timedelta(days=source.overlap_days)
     backfill = date.fromisoformat(source.backfill_from)
     return max(start, backfill)
@@ -162,6 +171,26 @@ def _days(start: date, end: date) -> list[str]:
         days.append(current.isoformat())
         current += timedelta(days=1)
     return days
+
+
+def _is_capped(state: dict[str, Any]) -> bool:
+    status = str(state.get("STATUS") or "").upper()
+    return status == "CAPPED" or bool(state.get("CURSOR"))
+
+
+def _resume_window(source_name: str, source, state: dict[str, Any]) -> FetchWindow:
+    start = str(state.get("WINDOW_START") or state.get("WATERMARK_VALUE") or "")
+    end = str(state.get("WINDOW_END") or start)
+    if not start:
+        raise ConfigurationError(f"{source_name}: capped watermark has no window start")
+    return FetchWindow(
+        source_name,
+        source.entity,
+        start[:10],
+        end[:10],
+        "incremental",
+        resume_cursor=state.get("CURSOR"),
+    )
 
 
 def _date_or_none(value: str | None) -> date | None:
