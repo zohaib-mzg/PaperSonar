@@ -31,6 +31,7 @@ DECLARE
   critical_failures  NUMBER DEFAULT 0;
   total_failures     NUMBER DEFAULT 0;
   is_capped          BOOLEAN DEFAULT FALSE;
+  resume_cursor      VARCHAR;
   publish_result     VARCHAR DEFAULT 'PUBLISHED';
 BEGIN
   SELECT BATCH_ID INTO :batch_id
@@ -83,9 +84,9 @@ BEGIN
   END IF;
 
   SELECT SOURCE_NAME, ENTITY_NAME, EXTRACTION_MODE, WINDOW_START, WINDOW_END,
-         IS_CAPPED
+         IS_CAPPED, CURSOR_END
     INTO :source_name, :entity_name, :extraction_mode, :window_start, :window_end,
-         :is_capped
+         :is_capped, :resume_cursor
   FROM PAPERSONAR.PROJECT_AUDIT.BATCH
   WHERE BATCH_ID = :batch_id;
 
@@ -114,7 +115,38 @@ BEGIN
 
   IF (COALESCE(:is_capped, FALSE)) THEN
     -- Publish the partial data for visibility, but do not claim the window is
-    -- complete. Leaving the watermark untouched prevents silent data loss.
+    -- complete. Advance only to the window start and store the first unread
+    -- cursor so the next run resumes the exact same logical window.
+    MERGE INTO PAPERSONAR.PROJECT_AUDIT.SOURCE_WATERMARK t
+    USING (
+      SELECT
+        :source_name AS SOURCE_NAME,
+        :entity_name AS ENTITY_NAME,
+        TO_VARCHAR(:window_start) AS WATERMARK_VALUE,
+        :window_start AS WINDOW_START,
+        :window_end AS WINDOW_END,
+        :resume_cursor AS CURSOR,
+        :batch_id AS LAST_BATCH_ID
+    ) s
+    ON t.SOURCE_NAME = s.SOURCE_NAME AND t.ENTITY_NAME = s.ENTITY_NAME
+    WHEN MATCHED THEN UPDATE SET
+      t.WATERMARK_VALUE = TO_VARCHAR(GREATEST(
+        COALESCE(TRY_TO_DATE(t.WATERMARK_VALUE), TO_DATE('1900-01-01')),
+        COALESCE(TRY_TO_DATE(s.WATERMARK_VALUE), TO_DATE('1900-01-01'))
+      )),
+      t.WINDOW_START = s.WINDOW_START,
+      t.WINDOW_END = s.WINDOW_END,
+      t.CURSOR = s.CURSOR,
+      t.LAST_BATCH_ID = s.LAST_BATCH_ID,
+      t.LAST_SUCCESS_AT = CURRENT_TIMESTAMP(),
+      t.STATUS = 'CAPPED',
+      t.UPDATED_AT = CURRENT_TIMESTAMP()
+    WHEN NOT MATCHED THEN INSERT
+      (SOURCE_NAME, ENTITY_NAME, WATERMARK_VALUE, WINDOW_START, WINDOW_END,
+       OVERLAP_DAYS, CURSOR, LAST_BATCH_ID, LAST_SUCCESS_AT, STATUS, UPDATED_AT)
+      VALUES (s.SOURCE_NAME, s.ENTITY_NAME, s.WATERMARK_VALUE, s.WINDOW_START,
+              s.WINDOW_END, 0, s.CURSOR, s.LAST_BATCH_ID, CURRENT_TIMESTAMP(),
+              'CAPPED', CURRENT_TIMESTAMP());
     publish_result := 'PUBLISHED_CAPPED';
   ELSE
     -- Incremental windows are updated-date windows, so WINDOW_END is a valid
@@ -141,6 +173,7 @@ BEGIN
       )),
       t.WINDOW_START = s.WINDOW_START,
       t.WINDOW_END = s.WINDOW_END,
+      t.CURSOR = NULL,
       t.LAST_BATCH_ID = s.LAST_BATCH_ID,
       t.LAST_SUCCESS_AT = CURRENT_TIMESTAMP(),
       t.STATUS = 'PUBLISHED',

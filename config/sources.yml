@@ -54,10 +54,11 @@ sources:
     backoff_base_seconds: 2
     backoff_max_seconds: 90
     # One Crossref index-date day is ~800k-900k works. Keep the real daily run
-    # inside the 240-minute GitHub job by reading a bounded prefix. The runner
-    # marks the batch CAPPED and Snowflake does not advance the watermark, so
-    # the unread remainder is never treated as complete.
-    max_records: 20000
+    # inside the GitHub job by reading a bounded prefix. The runner stops at a
+    # shard boundary, stores the first unread cursor, and marks the batch
+    # CAPPED; Snowflake advances the watermark only to the window start until
+    # the remainder has been read.
+    max_records: 30000
     overlap_days: 0
     backfill_from: "2026-11-01"
 
@@ -77,6 +78,7 @@ sources:
     enabled: true
     entity: doi
     page_size: 1000
+    max_records: 30000
     # {window_start}/{window_end} are substituted by the extractor.
     # VERIFY: confirm the updated-range query syntax against the live API.
     query: "updated:[{window_start}T00:00:00Z TO {window_end}T23:59:59Z]"
@@ -92,6 +94,7 @@ sources:
     enabled: true
     entity: record
     metadata_prefix: oai_datacite
+    max_records: 30000
     rate_delay_seconds: 1.0
     timeout_seconds: 120
     max_attempts: 5

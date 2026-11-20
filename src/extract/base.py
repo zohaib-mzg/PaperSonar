@@ -37,6 +37,9 @@ class FetchWindow:
     window_start: str
     window_end: str
     mode: str  # full | incremental
+    # Set only when resuming a capped incremental window. Adapters ignore it;
+    # the extraction runner passes it as the first page cursor.
+    resume_cursor: str | None = None
 
     @property
     def window_id(self) -> str:

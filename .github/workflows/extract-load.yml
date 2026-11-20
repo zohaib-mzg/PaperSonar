@@ -217,11 +217,6 @@ jobs:
             echo "::endgroup::"
           done
 
-          if [ "$DRY_RUN" != "true" ]; then
-            echo "::group::trigger Snowflake ELT graph"
-            python -m runner.cli trigger --drain
-            echo "::endgroup::"
-          fi
       - name: Job summary
         if: always()
         run: |
@@ -236,7 +231,54 @@ jobs:
             echo "- Full mode is the one-time backfill; incremental uses updated-date windows only."
             echo "- OpenAlex incremental requires Member+/Partner daily sync (from_updated_date); all-source runs skip it unless confirmed."
             echo "- OpenAlex confirmation: input \`openalex_daily_sync\` or repository variable \`OPENALEX_DAILY_SYNC\`."
-            echo "- Task graph is triggered once with \`--drain\` after every source is LOADED."
+            echo "- Draining runs in a separate job with its own timeout."
             echo "- GitHub Actions is the only scheduler; the Snowflake root has no cron schedule."
             echo "- Raw shards: gzip NDJSON; no Python transforms."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  drain:
+    name: drain Snowflake ELT graph
+    needs: extract
+    if: ${{ needs.extract.result == 'success' && inputs.dry_run != true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PAPERSONAR_TARGET: snowflake
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ROLE: ${{ secrets.SNOWFLAKE_ROLE }}
+      SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+      SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+      SNOWFLAKE_SCHEMA: ${{ secrets.SNOWFLAKE_SCHEMA }}
+      SNOWFLAKE_PRIVATE_KEY: ${{ secrets.SNOWFLAKE_PRIVATE_KEY }}
+      SNOWFLAKE_PRIVATE_KEY_PASSPHRASE: ${{ secrets.SNOWFLAKE_PRIVATE_KEY_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+      - name: Check loader role
+        run: |
+          if [ -z "${SNOWFLAKE_ROLE:-}" ]; then
+            echo "::error::SNOWFLAKE_ROLE is required"
+            exit 1
+          fi
+          if [ "${SNOWFLAKE_ROLE}" = "ACCOUNTADMIN" ]; then
+            echo "::error::Refusing to drain with ACCOUNTADMIN; use PAPERSONAR_LOADER."
+            exit 1
+          fi
+      - name: Drain loaded batches
+        run: python -m runner.cli trigger --drain
+      - name: Job summary
+        if: always()
+        run: |
+          {
+            echo "## PaperSonar ELT drain"
+            echo ""
+            echo "- Drain runs as a separate job so a slow task graph cannot cancel extraction."
+            echo "- Loader role only; ACCOUNTADMIN is rejected."
           } >> "$GITHUB_STEP_SUMMARY"

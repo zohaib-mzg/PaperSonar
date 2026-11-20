@@ -96,6 +96,26 @@ class SnowflakeClient:
     # -- statements -----------------------------------------------------------
 
     def execute(self, sql: str, params: Any = None) -> list[tuple]:
+        """Execute a statement, retrying transient connector failures."""
+        attempt = 0
+        while True:
+            try:
+                return self._execute_once(sql, params)
+            except Exception as exc:  # noqa: BLE001 - connector classes vary by version
+                transient = type(exc).__name__ in {
+                    "OperationalError", "InterfaceError", "DatabaseError",
+                    "ServiceUnavailableError",
+                }
+                if not transient or attempt >= 6:
+                    raise
+                delay = min(2**attempt, 16)
+                attempt += 1
+                logger.warning(
+                    "transient Snowflake error (%s); retrying in %ds", type(exc).__name__, delay
+                )
+                time.sleep(delay)
+
+    def _execute_once(self, sql: str, params: Any = None) -> list[tuple]:
         cursor = self._conn.cursor()
         try:
             cursor.execute(sql, params or None)
@@ -106,6 +126,44 @@ class SnowflakeClient:
             cursor.close()
 
     # -- batch lifecycle ------------------------------------------------------
+
+    def requeue_failed_batch(self, batch_id: str) -> bool:
+        """Move a FAILED transformation batch back to LOADED for a safe re-run."""
+        rows = self.execute(
+            "SELECT STATUS FROM PROJECT_AUDIT.BATCH WHERE BATCH_ID = %s", [batch_id]
+        )
+        if not rows or rows[0][0] != "FAILED":
+            return False
+        self.execute(
+            "UPDATE PROJECT_AUDIT.BATCH SET STATUS = 'LOADED', ERROR_SUMMARY = NULL, "
+            "UPDATED_AT = CURRENT_TIMESTAMP() WHERE BATCH_ID = %s AND STATUS = 'FAILED'",
+            [batch_id],
+        )
+        return True
+
+    def source_summary(self) -> list[dict[str, Any]]:
+        """Return per-source batch and record totals for operational reporting."""
+        rows = self.execute(
+            """
+            SELECT SOURCE_NAME,
+                   COUNT(*) AS BATCHES,
+                   COUNT_IF(STATUS = 'LOADED') AS LOADED,
+                   COUNT_IF(STATUS = 'PROCESSING') AS PROCESSING,
+                   COUNT_IF(STATUS = 'PUBLISHED') AS PUBLISHED,
+                   COUNT_IF(STATUS = 'FAILED') AS FAILED,
+                   SUM(RECORD_COUNT) AS RECORDS
+            FROM PROJECT_AUDIT.BATCH
+            GROUP BY SOURCE_NAME ORDER BY SOURCE_NAME
+            """
+        )
+        return [
+            {
+                "SOURCE_NAME": row[0], "BATCHES": int(row[1]), "LOADED": int(row[2]),
+                "PROCESSING": int(row[3]), "PUBLISHED": int(row[4]),
+                "FAILED": int(row[5]), "RECORDS": int(row[6] or 0),
+            }
+            for row in rows
+        ]
 
     def get_batch(self, batch_id: str) -> dict[str, Any] | None:
         rows = self.execute(
@@ -124,6 +182,7 @@ class SnowflakeClient:
             "CURSOR_END": rows[0][4],
             "FILE_COUNT": rows[0][5],
             "RECORD_COUNT": rows[0][6],
+            "IS_CAPPED": bool(rows[0][7]),
         }
 
     def register_batch(
@@ -148,7 +207,10 @@ class SnowflakeClient:
                      %s AS IS_CAPPED
             ) s
             ON t.BATCH_ID = s.BATCH_ID
-            WHEN MATCHED AND t.STATUS IN ('EXTRACTING', 'LOADED', 'FAILED') THEN UPDATE SET
+            WHEN MATCHED AND (
+              t.STATUS IN ('EXTRACTING', 'LOADED', 'FAILED')
+              OR (t.STATUS = 'PUBLISHED' AND t.IS_CAPPED)
+            ) THEN UPDATE SET
               t.STATUS = 'EXTRACTING',
               t.EXTRACTION_MODE = s.EXTRACTION_MODE,
               t.WINDOW_START = s.WINDOW_START,
@@ -419,6 +481,79 @@ class SnowflakeClient:
         )
         return rows[0][0] if rows else None
 
+    def get_watermark_state(self, source_name: str, entity_name: str) -> dict[str, Any]:
+        """Return the durable incremental resume state for one source/entity."""
+        rows = self.execute(
+            "SELECT WATERMARK_VALUE, WINDOW_START, WINDOW_END, CURSOR, STATUS, "
+            "LAST_BATCH_ID FROM PROJECT_AUDIT.SOURCE_WATERMARK "
+            "WHERE UPPER(SOURCE_NAME) = UPPER(%s) AND UPPER(ENTITY_NAME) = UPPER(%s)",
+            [source_name, entity_name],
+        )
+        if not rows:
+            return {}
+        row = rows[0]
+        return {
+            "WATERMARK_VALUE": row[0],
+            "WINDOW_START": row[1],
+            "WINDOW_END": row[2],
+            "CURSOR": row[3],
+            "STATUS": row[4],
+            "LAST_BATCH_ID": row[5],
+        }
+
+    def batch_statuses(self) -> list[dict[str, Any]]:
+        """Return the current audit state of every recent batch."""
+        rows = self.execute(
+            "SELECT BATCH_ID, SOURCE_NAME, STATUS, FILE_COUNT, RECORD_COUNT, "
+            "IS_CAPPED, TO_VARCHAR(UPDATED_AT) "
+            "FROM PROJECT_AUDIT.BATCH ORDER BY CREATED_AT, BATCH_ID"
+        )
+        return [
+            {
+                "BATCH_ID": row[0],
+                "SOURCE_NAME": row[1],
+                "STATUS": row[2],
+                "FILE_COUNT": int(row[3] or 0),
+                "RECORD_COUNT": int(row[4] or 0),
+                "IS_CAPPED": bool(row[5]),
+                "UPDATED_AT": row[6],
+            }
+            for row in rows
+        ]
+
+    def task_history(self, *, hours: int = 1, limit: int = 20) -> list[dict[str, Any]]:
+        """Recent task history with timestamps normalized to UTC for logs.
+
+        Snowflake displays TIMESTAMP_LTZ in the session timezone (-0800 here),
+        while GitHub cron and the runner use UTC. Converting explicitly avoids
+        comparing wall-clock values from different zones.
+        """
+        rows = self.execute(
+            """
+            SELECT NAME, STATE, ERROR_MESSAGE,
+                   TO_VARCHAR(CONVERT_TIMEZONE('UTC', SCHEDULED_TIME)),
+                   TO_VARCHAR(CONVERT_TIMEZONE('UTC', STARTED_TIME)),
+                   TO_VARCHAR(CONVERT_TIMEZONE('UTC', COMPLETED_TIME))
+            FROM TABLE(PAPERSONAR.INFORMATION_SCHEMA.TASK_HISTORY(
+              SCHEDULED_TIME_RANGE_START => DATEADD('hour', -%s, CURRENT_TIMESTAMP()),
+              RESULT_LIMIT => %s
+            ))
+            ORDER BY SCHEDULED_TIME DESC
+            """,
+            [hours, limit],
+        )
+        return [
+            {
+                "NAME": row[0],
+                "STATE": row[1],
+                "ERROR": row[2],
+                "SCHEDULED_UTC": row[3],
+                "STARTED_UTC": row[4],
+                "COMPLETED_UTC": row[5],
+            }
+            for row in rows
+        ]
+
     def pending_batch_count(self) -> int:
         rows = self.execute(
             "SELECT COUNT(*) FROM PROJECT_AUDIT.BATCH "
@@ -427,43 +562,78 @@ class SnowflakeClient:
         return int(rows[0][0]) if rows else 0
 
     def wait_for_idle(self, *, timeout_seconds: int = 3600, poll_seconds: int = 10) -> None:
-        """Wait until no batch is LOADED or PROCESSING.
-
-        LOADED covers a batch that the root task has not claimed yet; PROCESSING
-        covers an in-flight graph. Timeout is a fail-closed guard against a
-        suspended or broken task graph.
-        """
+        """Compatibility wrapper retained for callers that only need to wait."""
         deadline = time.monotonic() + timeout_seconds
-        while True:
-            if self.pending_batch_count() == 0:
-                return
+        while self.pending_batch_count():
             if time.monotonic() >= deadline:
-                raise RuntimeError(
-                    "Timed out waiting for Snowflake batches to leave LOADED/PROCESSING; "
-                    "inspect PROJECT_AUDIT.BATCH, RUN_LOG and task history."
-                )
+                raise RuntimeError("Timed out waiting for Snowflake batches to drain")
             time.sleep(poll_seconds)
 
-    def drain_batches(self, *, max_batches: int = 500, timeout_seconds: int = 3600) -> int:
-        """Trigger the root task until every LOADED/PROCESSING batch is resolved."""
+    def drain_batches(
+        self,
+        *,
+        max_batches: int = 500,
+        no_progress_seconds: int = 600,
+        poll_seconds: int = 10,
+    ) -> int:
+        """Trigger one root per LOADED batch and fail fast on a stalled graph.
+
+        The root task claims exactly one LOADED batch per EXECUTE TASK. The old
+        loop triggered once and then waited for *all* pending batches to clear,
+        leaving the other LOADED batches stranded. Here every poll logs batch
+        status and a new root is triggered as soon as no graph is in flight.
+        """
         rounds = 0
+        last_signature: tuple | None = None
+        last_progress = time.monotonic()
+        deadline = time.monotonic() + no_progress_seconds
         while rounds < max_batches:
-            if self.pending_batch_count() == 0:
-                return rounds
-            try:
-                self.execute_root_task()
-            except Exception as exc:
-                logger.warning(
-                    "could not start TASK_ELT_ROOT (%s); waiting for the in-flight graph",
-                    exc,
+            statuses = self.batch_statuses()
+            pending = [row for row in statuses if row["STATUS"] in ("LOADED", "PROCESSING")]
+            counts = {
+                status: sum(1 for row in statuses if row["STATUS"] == status)
+                for status in ("LOADED", "PROCESSING", "PUBLISHED", "FAILED")
+            }
+            logger.info("ELT poll: rounds=%d counts=%s", rounds, counts)
+            for row in pending:
+                logger.info(
+                    "ELT poll batch=%s status=%s capped=%s files=%d records=%d updated=%s",
+                    row["BATCH_ID"], row["STATUS"], row["IS_CAPPED"], row["FILE_COUNT"],
+                    row["RECORD_COUNT"], row["UPDATED_AT"],
                 )
-            self.wait_for_idle(timeout_seconds=timeout_seconds)
-            rounds += 1
-        remaining = self.pending_batch_count()
-        if remaining:
-            raise RuntimeError(
-                f"{remaining} batches still pending after {max_batches} trigger rounds"
+            if not pending:
+                return rounds
+
+            signature = tuple(
+                (row["BATCH_ID"], row["STATUS"], row["UPDATED_AT"]) for row in statuses
             )
+            if last_signature is None or signature != last_signature:
+                last_signature = signature
+                last_progress = time.monotonic()
+            elif time.monotonic() - last_progress >= no_progress_seconds:
+                history = self.task_history(hours=2, limit=20)
+                logger.error("ELT task history (UTC): %s", json.dumps(history, default=str))
+                raise RuntimeError(
+                    f"No ELT progress for {no_progress_seconds}s with "
+                    f"{len(pending)} batch(es) still LOADED/PROCESSING: "
+                    f"{[row['BATCH_ID'] for row in pending]}"
+                )
+            if time.monotonic() >= deadline and not pending:
+                return rounds
+
+            in_flight = any(row["STATUS"] == "PROCESSING" for row in pending)
+            if not in_flight:
+                try:
+                    self.execute_root_task()
+                    rounds += 1
+                    logger.info("ELT root triggered (round %d)", rounds)
+                except Exception as exc:  # noqa: BLE001 - root may already be running
+                    logger.warning("could not start TASK_ELT_ROOT (%s); repolling", exc)
+            time.sleep(poll_seconds)
+
+        remaining = [row for row in self.batch_statuses() if row["STATUS"] in ("LOADED", "PROCESSING")]
+        if remaining:
+            raise RuntimeError(f"{len(remaining)} batches still pending after {max_batches} rounds")
         return rounds
 
     def execute_root_task(self) -> None:

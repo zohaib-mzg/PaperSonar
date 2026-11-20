@@ -161,6 +161,33 @@ def test_incremental_catches_up_after_a_gap(config_path: Path) -> None:
     ]
 
 
+def test_capped_watermark_replays_exact_window_and_cursor(config_path: Path) -> None:
+    settings = Settings.from_env({}, config_path=str(config_path))
+    windows = plan_windows(
+        settings,
+        "crossref",
+        "incremental",
+        today=date(2024, 1, 20),
+        watermark_state={
+            "WATERMARK_VALUE": "2024-01-08",
+            "WINDOW_START": "2024-01-08",
+            "WINDOW_END": "2024-01-08",
+            "CURSOR": "first-unread-cursor",
+            "STATUS": "CAPPED",
+        },
+    )
+    assert windows == [
+        FetchWindow(
+            "crossref",
+            "work",
+            "2024-01-08",
+            "2024-01-08",
+            "incremental",
+            resume_cursor="first-unread-cursor",
+        )
+    ]
+
+
 def test_non_positive_max_records_is_rejected(tmp_path: Path) -> None:
     path = tmp_path / "sources.yml"
     path.write_text(CONFIG.replace("max_records: 20000", "max_records: 0"), encoding="utf-8")

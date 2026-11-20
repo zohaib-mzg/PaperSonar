@@ -58,6 +58,9 @@ def build_parser() -> argparse.ArgumentParser:
     extract.add_argument("--until", dest="until_date", default=None, help="Override window end (YYYY-MM-DD)")
     extract.add_argument("--config", default=None, help="Path to config/sources.yml")
     extract.add_argument("--dry-run", action="store_true", help="Write local files only; no Snowflake calls")
+    extract.add_argument(
+        "--no-cap", action="store_true", help="Bypass max_records for an explicit recovery window"
+    )
     extract.add_argument("--force", action="store_true", help="Re-extract a LOADED/PROCESSING batch")
     extract.add_argument(
         "--no-task",
@@ -86,7 +89,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Trigger the root task until every LOADED/PROCESSING batch is resolved",
     )
+    trigger.add_argument(
+        "--retry-batch-id", default=None, help="Requeue one FAILED batch before draining"
+    )
     trigger.add_argument("--config", default=None, help="Path to config/sources.yml")
+
+    report = sub.add_parser("report", help="Print batch status and per-source totals.")
+    report.add_argument("--config", default=None, help="Path to config/sources.yml")
 
     return parser
 
@@ -108,6 +117,8 @@ def main(argv: list[str] | None = None) -> int:
             return _deploy(args)
         if args.command == "trigger":
             return _trigger(args)
+        if args.command == "report":
+            return _report(args)
     except ConfigurationError as exc:
         logger.error("configuration error: %s", exc)
         return 2
@@ -138,11 +149,13 @@ def _check(args: argparse.Namespace) -> int:
 def _extract(args: argparse.Namespace) -> int:
     settings = _settings(args)
     watermark_end: str | None = None
+    watermark_state: dict | None = None
     if not args.dry_run:
         client = SnowflakeClient.from_settings(settings)
         try:
             entity_name = settings.require_source(args.source).entity
-            watermark_end = client.get_watermark(args.source, entity_name)
+            watermark_state = client.get_watermark_state(args.source, entity_name)
+            watermark_end = watermark_state.get("WATERMARK_VALUE")
         finally:
             client.close()
     windows = plan_windows(
@@ -152,6 +165,7 @@ def _extract(args: argparse.Namespace) -> int:
         from_date=args.from_date,
         until_date=args.until_date,
         watermark_end=watermark_end,
+        watermark_state=watermark_state,
     )
     reports = plan_and_run(
         settings,
@@ -161,6 +175,7 @@ def _extract(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         force=args.force,
         execute_task=not args.no_task,
+        disable_cap=args.no_cap,
     )
     payload = [report.as_dict() for report in reports]
     if args.json:
@@ -215,12 +230,30 @@ def _trigger(args: argparse.Namespace) -> int:
     settings = _settings(args)
     client = SnowflakeClient.from_settings(settings)
     try:
+        if args.retry_batch_id:
+            if not client.requeue_failed_batch(args.retry_batch_id):
+                print(f"batch is not FAILED: {args.retry_batch_id}")
+                return 1
+            print(f"requeued FAILED batch: {args.retry_batch_id}")
         if args.drain:
             rounds = client.drain_batches()
             print(f"drained pending batches in {rounds} trigger round(s)")
-        else:
+        elif not args.retry_batch_id:
             client.execute_root_task()
             print("triggered PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT")
+        return 0
+    finally:
+        client.close()
+
+
+def _report(args: argparse.Namespace) -> int:
+    settings = _settings(args)
+    client = SnowflakeClient.from_settings(settings)
+    try:
+        print(json.dumps({
+            "sources": client.source_summary(),
+            "batches": client.batch_statuses(),
+        }, indent=2, default=str))
         return 0
     finally:
         client.close()
