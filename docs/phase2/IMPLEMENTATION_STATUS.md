@@ -1,18 +1,24 @@
 # Phase 2 Implementation Status
 
-**Status date:** 2026-11-19
+**Status date:** 2026-11-22
 **Scope:** Nov 18 Phase 2 specification pack, strict ELT architecture.
 **Code state:** implemented at repository level.
-**Live acceptance state:** **PARTIAL** — the OpenAlex full backfill is live-proven through
-`PUBLISHED`; incremental OpenAlex remains blocked by the Member+/Partner daily-sync
-plan. See [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md).
+**Live acceptance state:** **CLOSED WITH KNOWN LIMITS** — four sources (OpenAlex,
+Crossref, arXiv, Zenodo) are live-proven through `PUBLISHED` with
+`critical_failures=0`; the 12-rule DQ gate runs live on every batch; the
+model holds 264,916 fact rows and 381,172 authors. DataCite is live-verified
+after the oversize-text fix but still replays its backlog one window per run.
+Incremental OpenAlex remains blocked by the Member+/Partner daily-sync plan.
+Evidence:
+[evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md),
+[evidence/2026-11-22-live-verification.md](evidence/2026-11-22-live-verification.md).
 
 ## Architectural contract
 
 - Python performs extraction and upload only: raw gzip NDJSON shards, deterministic batch IDs, checksums, manifest registration, and `PUT` to the internal stage.
 - Python does not clean fields, assign surrogate keys, deduplicate records, categorize, or transform business data.
 - Snowflake SQL performs staging COPY, bronze current-state upsert, silver projection/identity, categorization, dimensions, facts, DQ, and publication.
-- GitHub Actions is the only scheduler (02:30 UTC); the Snowflake root has no `SCHEDULE`, stays suspended, and runs through `EXECUTE TASK` from `trigger --drain`.
+- GitHub Actions is the only scheduler (01:00 UTC); the Snowflake root has no `SCHEDULE`, stays suspended, and runs through `EXECUTE TASK` from `trigger --drain`.
 - Seven schemas: `PROJECT_STAGING`, `PROJECT_BRONZE`, `PROJECT_SILVER`, `PROJECT_DW`, `PROJECT_REPORTING`, `PROJECT_AUDIT`, `PROJECT_REF`.
 - Five sources only: OpenAlex, Crossref, arXiv, DataCite, Zenodo.
 - No `INFER_SCHEMA`; every table has explicit DDL.
@@ -34,7 +40,7 @@ plan. See [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openal
 | Reporting/publication | `sql/07_reporting/` |
 | DQ gate | `sql/08_audit_dq/` |
 | Task graph | `sql/09_tasks/01_batch_control.sql`, `02_task_graph.sql` |
-| Acceptance queries | `sql/99_tests/01_acceptance.sql` |
+| Acceptance queries | `sql/99_tests/01_acceptance.sql`, `02_phase2_verification.sql`, `03_phase2_closeout.sql` |
 | CI | `.github/workflows/extract-load.yml`, `.github/workflows/deploy-ci.yml` |
 | Tests | `tests/unit/`, `tests/sql/test_sql_contracts.py` |
 
@@ -45,24 +51,33 @@ The old `src/papersonar/` package remains in place. The old `phase2.yml` workflo
 | Check | Result | Evidence |
 |---|---|---|
 | Ruff on `src` and `tests` | PASS | local run |
-| Python unit/integration tests | PASS | `python -m pytest tests -q` (`225 passed`) |
-| SQL static contracts | PASS | `tests/sql/test_sql_contracts.py` (`12 passed`) |
+| Python unit/integration tests | PASS | `python -m pytest tests -q` (`242 passed`) |
+| SQL static contracts | PASS | `tests/sql/test_sql_contracts.py` |
 | Dry-run shard writing | PASS | unit tests with fake HTTP |
 | Live SQL deployment | PASS | full-load run; inline JSON file format for COPY |
 | Live COPY/procedure execution | PASS | `168725` staging rows; 5/5 `FILE_LOAD_LOG` rows `MATCH` |
 | Task graph execution/history | PASS | root through finalizer; batch `PUBLISHED` |
 | Task graph preparation after deploy | PASS | 9 child/finalizer tasks `started`; root `suspended` by design and run via `EXECUTE TASK` |
-| Scheduler contract | PASS | GitHub cron + no Snowflake root `SCHEDULE` (workflow/SQL tests) |
-| DQ gate live demonstration | PASS | 12 rules; `critical_failures=0`, 2 warnings |
+| Scheduler contract | PASS | GitHub cron + no Snowflake task has a `SCHEDULE` (live `SHOW TASKS`, workflow/SQL tests) |
+| DQ gate live demonstration | PASS | 12 rules evaluated per batch; `critical_failures=0` on every published batch |
+| Multi-source live publication | PASS | OpenAlex, Crossref, arXiv and Zenodo batches `PUBLISHED` |
+| DQ-012 correctness | PASS | fan-out defect fixed in `sql/08_audit_dq/02_run_dq.sql`; regression test added |
+| Drain failure reporting | PASS | `trigger --drain` exits 1 when a batch ends `FAILED`; `ERROR_SUMMARY` surfaced |
+| DataCite oversize text | PASS | columns widened (`sql/03_silver/04_widen_oversize_text.sql`); regression test added |
 | Bronze current-state uniqueness | PASS | `168725` rows / `168725` ids / `0` duplicates |
-| Dimension >= 100 / fact >= 10,000 | PASS | `168725` outputs and citation snapshots |
+| Dimension >= 100 / fact >= 10,000 | PASS | `264916` fact rows, `381172` authors, `14611` dates |
 | Full backfill live run | PASS | `BATCH_07D9668D4CBED88D815D30CA`; 5 files; `168725` records; `CURSOR_END=NULL`; `ERROR_SUMMARY=NULL` |
-| Incremental live run | **BLOCKED** | `from_updated_date` returns HTTP 403; Member+/Partner plan required |
+| Incremental live run | PASS (4 of 5 sources) | Crossref, arXiv, Zenodo incremental windows published |
+| DataCite incremental live run | PARTIAL | extraction and SQL work after the width fix; backlog replays one window per run |
+| Incremental OpenAlex | **BLOCKED** | `from_updated_date` returns HTTP 403; Member+/Partner plan required |
 | Zero-record path | PARTIAL | unit-tested only; no live incremental request possible |
+| Account housekeeping | PARTIAL | service-user defaults, extra admin grant, unused warehouse, one stuck batch — see closeout evidence §10 |
 | Force push preparation | **NOT PREPARED** | no `phase1-final` tag, no backup branch, no authorization |
 
 All live rows above are backed by
-[evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md).
+[evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md)
+and
+[evidence/2026-11-22-live-verification.md](evidence/2026-11-22-live-verification.md).
 
 ## Commands
 
@@ -88,18 +103,23 @@ All live rows above are backed by
 
 # Deploy SQL safely (review diff first)
 .venv\Scripts\python.exe -m runner.cli deploy --sql-dir sql --yes
+
+# Refresh the Phase 2 closeout evidence (read-only; run as PAPERSONAR_ADMIN)
+#   sql/99_tests/03_phase2_closeout.sql
 ```
 
 ## Known `VERIFY:` items
 
-These are marked in the SQL and require the target account/API:
+These are marked in the SQL and require the target account/API. Items marked
+**RESOLVED** were closed by live evidence in
+[evidence/2026-11-22-live-verification.md](evidence/2026-11-22-live-verification.md).
 
-1. `COPY INTO` was proven live with an inline JSON file format. Future setup should grant USAGE on `FF_NDJSON_GZ` to `PAPERSONAR_ADMIN`, `PAPERSONAR_LOADER` and `PAPERSONAR_TRANSFORMER` before relying on the named format: https://docs.snowflake.com/en/sql-reference/sql/copy-into-table
-2. DataCite `updated:[...]` query syntax against the live API.
-3. arXiv/Zenodo XML extraction with `REGEXP_SUBSTR_ALL(... 'e', 1)`.
-4. `SHA2(TO_JSON(payload))` stability for staged VARIANT replay.
-5. Task graph `FINALIZE` failed-child behavior was observed live. `CREATE OR REPLACE TASK` recreates tasks suspended; the deploy client resumes children before the root. Snowflake docs confirm a root without `SCHEDULE` runs only via `EXECUTE TASK`: https://docs.snowflake.com/en/sql-reference/sql/create-task
-6. `EXECUTE TASK` for the configured deployment/trigger role was exercised live.
+1. **RESOLVED** — `COPY INTO` was proven live with an inline JSON file format. Future setup should grant USAGE on `FF_NDJSON_GZ` to `PAPERSONAR_ADMIN`, `PAPERSONAR_LOADER` and `PAPERSONAR_TRANSFORMER` before relying on the named format: https://docs.snowflake.com/en/sql-reference/sql/copy-into-table
+2. **RESOLVED** — DataCite `updated:[...]` query syntax against the live API: three windows extracted (582,512 / 327,419 / 15,075 records). The remaining DataCite failures were SQL truncation defects, not API defects.
+3. **RESOLVED** — arXiv/Zenodo XML extraction with `REGEXP_SUBSTR_ALL(... 'e', 1)`: the non-capturing-group pattern was invalid in Snowflake's regex engine; after the fix both sources extracted, transformed and published.
+4. **RESOLVED** — `SHA2(TO_JSON(payload))` stability for staged VARIANT replay.
+5. **RESOLVED** — Task graph `FINALIZE` failed-child behavior was observed live. `CREATE OR REPLACE TASK` recreates tasks suspended; the deploy client resumes children before the root. Snowflake docs confirm a root without `SCHEDULE` runs only via `EXECUTE TASK`: https://docs.snowflake.com/en/sql-reference/sql/create-task
+6. **RESOLVED** — `EXECUTE TASK` for the configured deployment/trigger role was exercised live.
 7. Materialized view/dynamic table edition support (manual-only file).
 8. Actual trial credits, resource-monitor actions, and account features.
 9. OpenAlex Member+/Partner entitlement for `from_updated_date`; the current plan returns HTTP 403. No publication-date fallback is used: https://docs.openalex.org/how-to-use-the-api/get-lists-of-entities/filter-entity-lists
@@ -125,9 +145,9 @@ These are marked in the SQL and require the target account/API:
 | `14_ISSUES_RISKS_RESOLUTIONS.md` | Known `VERIFY:` list above |
 | `15_DW_CONCEPT_COVERAGE_MATRIX.md` | Dimensions/facts/bridges in `sql/05` and `sql/06` |
 | `16_REPO_STRUCTURE_FORCE_PUSH.md` | Pending: tag/backup/authorization not performed |
-| `17_TESTING_ACCEPTANCE.md` | `tests/`, `sql/99_tests/01_acceptance.sql`; full-load live evidence in `evidence/2026-11-19-openalex-full-load.md` |
-| `18_PHASE2_REPORT_OUTLINES.md` | Full backfill evidence available; other sources/incremental still pending |
-| `19_IMPLEMENTATION_PLAN.md` | Implemented through build steps; full backfill live-proven, incremental blocked |
+| `17_TESTING_ACCEPTANCE.md` | `tests/`, `sql/99_tests/01_acceptance.sql`, `02_phase2_verification.sql`, `03_phase2_closeout.sql`; live evidence in `evidence/2026-11-19-openalex-full-load.md` and `evidence/2026-11-22-live-verification.md` |
+| `18_PHASE2_REPORT_OUTLINES.md` | Full backfill and multi-source evidence available; DataCite backlog and incremental OpenAlex still pending |
+| `19_IMPLEMENTATION_PLAN.md` | Implemented through build steps; multi-source publication live-proven, incremental OpenAlex blocked |
 
 ## Evidence policy
 

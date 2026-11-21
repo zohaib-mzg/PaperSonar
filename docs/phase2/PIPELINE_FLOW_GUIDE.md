@@ -6,7 +6,7 @@ moves through Snowflake, and where the final usable data is stored.
 
 If you only remember one thing:
 
-> **GitHub Actions is the only scheduler. It wakes up every day at 02:30 UTC,
+> **GitHub Actions is the only scheduler. It wakes up every day at 01:00 UTC,
 > fetches new/changed research records, puts them into Snowflake, and then asks
 > Snowflake to process them. Snowflake does not wake itself up.**
 
@@ -16,7 +16,7 @@ If you only remember one thing:
 
 | Question | Answer |
 |---|---|
-| When does incremental load come? | Every day at **02:30 UTC** through GitHub Actions. Manual runs are also possible. |
+| When does incremental load come? | Every day at **01:00 UTC** through GitHub Actions. Manual runs are also possible. |
 | Is there a Snowflake schedule? | **No.** The Snowflake root task is deliberately suspended and is started only by GitHub. |
 | What is a “full load”? | A one-time large initial load. It is **not** part of the daily schedule. |
 | What does incremental mean here? | Fetch only records that were **created or changed recently**, using each source’s update/change information. It does **not** use publication dates for daily loading. |
@@ -99,8 +99,8 @@ category keywords, expected keys, and DQ rule definitions.
 
 ### Automatic daily run
 
-- GitHub Actions runs `extract-load.yml` at `30 2 * * *`, which means
-  **02:30 UTC every day**.
+- GitHub Actions runs `extract-load.yml` at `0 1 * * *`, which means
+  **01:00 UTC every day**.
 - The workflow automatically uses:
   - `source = all`
   - `mode = incremental`
@@ -114,7 +114,7 @@ If OpenAlex is not confirmed as available for daily sync, it is skipped and the
 other four sources still run.
 
 Cron timing is not exact to the second. GitHub can delay a scheduled run slightly
-during busy periods, but the intended time is 02:30 UTC.
+during busy periods, but the intended time is 01:00 UTC.
 
 ### Manual run
 
@@ -151,7 +151,7 @@ There is **no publication-date fallback** for OpenAlex incremental loading.
 | Type | When to use | Date logic | Size | Scheduled? |
 |---|---|---|---|---|
 | **Full / backfill** | One-time initial load only | Publication-date range, exactly as given | Large: 100,000+ records possible | No |
-| **Incremental** | Every day | Change/update dates plus a small overlap window | Usually small; can be zero | Yes, 02:30 UTC |
+| **Incremental** | Every day | Change/update dates plus a small overlap window | Usually small; can be zero | Yes, 01:00 UTC |
 
 The completed OpenAlex full load was:
 

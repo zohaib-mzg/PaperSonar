@@ -29,7 +29,7 @@ Use separate tasks or clearly logged stages for each node. Finalizer must run af
 Only batches with status `LOADED` are eligible. Claim a batch safely before processing so overlapping roots do not process it concurrently. A claim lease/heartbeat or equivalent recovery design must handle abandoned processing. Root execution must be safe when no eligible batch exists.
 
 ## Task definitions
-Dependencies are explicit with `AFTER`; the root has no Snowflake `SCHEDULE`. GitHub owns freshness via its 02:30 UTC cron, and `trigger --drain` calls the root once per loaded batch. Do not add a second Snowflake cron or schedule sources independently inside Snowflake.
+Dependencies are explicit with `AFTER`; the root has no Snowflake `SCHEDULE`. GitHub owns freshness via its 01:00 UTC cron, and `trigger --drain` calls the root once per loaded batch. Do not add a second Snowflake cron or schedule sources independently inside Snowflake.
 
 Every task records run ID, batch ID, start/end, query ID if available, row counts, status, and error details. Configure bounded retries where supported and `SUSPEND_TASK_AFTER_NUM_FAILURES` appropriately. `VERIFY:` exact task parameter names, retry semantics, and graph finalizer patterns. Root `EXECUTE TASK` on a suspended root is supported for a user-managed warehouse: https://docs.snowflake.com/en/sql-reference/sql/execute-task.
 

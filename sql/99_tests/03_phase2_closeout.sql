@@ -1,0 +1,168 @@
+-- =============================================================================
+-- PaperSonar Phase 2 - closeout verification pack (READ-ONLY)
+-- =============================================================================
+-- Purpose: Reproduce the exact evidence that closes Phase 2: every batch that
+--          exists, every published batch, the latest DQ verdict per rule, the
+--          watermark state, the task-graph contract, model population, and the
+--          housekeeping items that are still open.
+-- Inputs: database PAPERSONAR (all schemas). No writes, no DDL.
+-- Outputs: result sets only; save each block as sanitized evidence under
+--          docs/phase2/evidence/2026-11-22-live-verification/.
+-- Idempotent: Yes - SELECT/SHOW only. Safe to re-run.
+-- Owner: PAPERSONAR_ADMIN (ACCOUNTADMIN acceptable for this audit only;
+--        automation must never use ACCOUNTADMIN).
+-- Parameters: none (all queries are self-contained).
+-- Cost: metadata only, except the marked [SCAN] blocks.
+-- Notes:   Run blocks in order. Each block is self-contained.
+-- =============================================================================
+
+-- ============================================================================
+-- SECTION J - PHASE 2 CLOSEOUT EVIDENCE
+-- ============================================================================
+
+-- J1. Batch ledger: every batch ever created, newest first ------------------
+SELECT BATCH_ID,
+       SOURCE_NAME,
+       ENTITY_NAME,
+       EXTRACTION_MODE,
+       WINDOW_START,
+       WINDOW_END,
+       STATUS,
+       FILE_COUNT,
+       RECORD_COUNT,
+       IS_CAPPED,
+       CURSOR_END,
+       ERROR_SUMMARY,
+       CREATED_AT,
+       FINISHED_AT
+FROM PAPERSONAR.PROJECT_AUDIT.BATCH
+ORDER BY CREATED_AT DESC;
+
+-- J2. Publication contract: batches exposed through the reporting views ------
+-- Expect one row per batch whose STATUS is PUBLISHED; nothing else.
+SELECT BATCH_ID,
+       PUBLISHED_AT,
+       PUBLISHED_BY,
+       DQ_SUMMARY,
+       IS_CAPPED
+FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH
+ORDER BY PUBLISHED_AT DESC;
+
+-- J3. Latest DQ verdict per rule for every batch ----------------------------
+-- QUALIFY keeps the most recent CHECKED_AT for each (BATCH_ID, RULE_ID).
+SELECT BATCH_ID,
+       RULE_ID,
+       SEVERITY,
+       LAYER,
+       STATUS,
+       OBSERVED_VALUE,
+       THRESHOLD_VALUE,
+       CHECKED_AT
+FROM PAPERSONAR.PROJECT_AUDIT.DQ_RESULT
+QUALIFY ROW_NUMBER() OVER (PARTITION BY BATCH_ID, RULE_ID ORDER BY CHECKED_AT DESC) = 1
+ORDER BY BATCH_ID, RULE_ID;
+
+-- J4. Critical-failure rollup per batch (must be 0 for every PUBLISHED batch)
+SELECT b.BATCH_ID,
+       b.SOURCE_NAME,
+       b.STATUS,
+       COUNT_IF(d.SEVERITY = 'CRITICAL' AND d.STATUS = 'FAIL') AS CRITICAL_FAILURES,
+       COUNT_IF(d.SEVERITY = 'WARNING' AND d.STATUS = 'FAIL') AS WARNING_FAILURES,
+       COUNT_IF(d.STATUS = 'PASS')                            AS RULES_PASSED
+FROM PAPERSONAR.PROJECT_AUDIT.BATCH b
+LEFT JOIN (
+  SELECT BATCH_ID, RULE_ID, SEVERITY, STATUS
+  FROM PAPERSONAR.PROJECT_AUDIT.DQ_RESULT
+  QUALIFY ROW_NUMBER() OVER (PARTITION BY BATCH_ID, RULE_ID ORDER BY CHECKED_AT DESC) = 1
+) d ON d.BATCH_ID = b.BATCH_ID
+GROUP BY b.BATCH_ID, b.SOURCE_NAME, b.STATUS
+ORDER BY b.BATCH_ID;
+
+-- J5. Watermark state: advances only after complete-window publication -------
+SELECT SOURCE_NAME,
+       ENTITY_NAME,
+       WATERMARK_VALUE,
+       WINDOW_START,
+       WINDOW_END,
+       OVERLAP_DAYS,
+       LAST_BATCH_ID,
+       LAST_SUCCESS_AT,
+       STATUS,
+       UPDATED_AT
+FROM PAPERSONAR.PROJECT_AUDIT.SOURCE_WATERMARK
+ORDER BY SOURCE_NAME, ENTITY_NAME;
+
+-- J6. Task graph: root suspended and schedule-free, 9 children started -------
+SHOW TASKS IN SCHEMA PAPERSONAR.PROJECT_AUDIT;
+
+-- J7. Scheduler contract: no Snowflake task may own a schedule ---------------
+SELECT NAME,
+       SCHEDULE,
+       STATE,
+       OWNER,
+       DEFINITION
+FROM TABLE(PAPERSONAR.INFORMATION_SCHEMA.TASKS(
+  RESULT_LIMIT => 100
+))
+WHERE SCHEDULE IS NOT NULL;
+
+-- J8. [SCAN] Model population: dimensions, facts and bridges ------------------
+SELECT 'DIM_AUTHOR'                  AS OBJECT_NAME, COUNT(*) AS ROW_COUNT FROM PAPERSONAR.PROJECT_DW.DIM_AUTHOR
+UNION ALL SELECT 'DIM_INSTITUTION',             COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_INSTITUTION
+UNION ALL SELECT 'DIM_TOPIC',                   COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_TOPIC
+UNION ALL SELECT 'DIM_VENUE',                   COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_VENUE
+UNION ALL SELECT 'DIM_DATE',                    COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_DATE
+UNION ALL SELECT 'DIM_CATEGORY',                COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_CATEGORY
+UNION ALL SELECT 'DIM_COUNTRY',                 COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_COUNTRY
+UNION ALL SELECT 'DIM_LANGUAGE',                COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_LANGUAGE
+UNION ALL SELECT 'DIM_ACCESS_STATUS',           COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_ACCESS_STATUS
+UNION ALL SELECT 'DIM_OUTPUT_TYPE',              COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_OUTPUT_TYPE
+UNION ALL SELECT 'DIM_SOURCE',                  COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIM_SOURCE
+UNION ALL SELECT 'DIMENSION_KEY_MAP',           COUNT(*) FROM PAPERSONAR.PROJECT_DW.DIMENSION_KEY_MAP
+UNION ALL SELECT 'FACT_RESEARCH_OUTPUT',        COUNT(*) FROM PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT
+UNION ALL SELECT 'FACT_OUTPUT_RELATION',        COUNT(*) FROM PAPERSONAR.PROJECT_DW.FACT_OUTPUT_RELATION
+UNION ALL SELECT 'FACT_CITATION_SNAPSHOT',      COUNT(*) FROM PAPERSONAR.PROJECT_DW.FACT_CITATION_SNAPSHOT
+UNION ALL SELECT 'FACT_OUTPUT_SOURCE_OBSERVATION', COUNT(*) FROM PAPERSONAR.PROJECT_DW.FACT_OUTPUT_SOURCE_OBSERVATION
+UNION ALL SELECT 'BRIDGE_OUTPUT_AUTHOR',        COUNT(*) FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_AUTHOR
+UNION ALL SELECT 'BRIDGE_OUTPUT_TOPIC_CATEGORY', COUNT(*) FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY
+UNION ALL SELECT 'BRIDGE_AUTHOR_INSTITUTION',   COUNT(*) FROM PAPERSONAR.PROJECT_DW.BRIDGE_AUTHOR_INSTITUTION
+ORDER BY 1;
+
+-- J9. Quarantine composition: rejected records are visible, never dropped ----
+SELECT BATCH_ID,
+       SOURCE_NAME,
+       REASON_CODE,
+       COUNT(*) AS RECORDS
+FROM PAPERSONAR.PROJECT_AUDIT.QUARANTINE_RECORD
+GROUP BY BATCH_ID, SOURCE_NAME, REASON_CODE
+ORDER BY RECORDS DESC, BATCH_ID;
+
+-- J10. Non-terminal batches: every batch must be in a terminal state ----------
+SELECT BATCH_ID,
+       SOURCE_NAME,
+       STATUS,
+       CREATED_AT,
+       FINISHED_AT
+FROM PAPERSONAR.PROJECT_AUDIT.BATCH
+WHERE STATUS NOT IN ('PUBLISHED', 'FAILED', 'SKIPPED')
+ORDER BY CREATED_AT DESC;
+
+-- J11. Taxonomy reference state (Phase 3 prerequisite) -----------------------
+SELECT 'REF_CATEGORY'        AS OBJECT_NAME, COUNT(*) AS ROW_COUNT FROM PAPERSONAR.PROJECT_REF.REF_CATEGORY
+UNION ALL SELECT 'REF_CATEGORY_KEYWORD', COUNT(*) FROM PAPERSONAR.PROJECT_REF.REF_CATEGORY_KEYWORD
+UNION ALL SELECT 'REF_TAXONOMY_MAP',    COUNT(*) FROM PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP
+UNION ALL SELECT 'CATEGORY_OVERRIDE',   COUNT(*) FROM PAPERSONAR.PROJECT_REF.CATEGORY_OVERRIDE
+UNION ALL SELECT 'BRIDGE_OUTPUT_TOPIC_CATEGORY', COUNT(*) FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY
+ORDER BY 1;
+
+-- J12. Service-user defaults and role grants (least privilege check) ---------
+SHOW USERS;
+
+-- J13. Reporting view row counts (published data only) -----------------------
+SELECT 'VW_RESEARCH_OUTPUT'    AS VIEW_NAME, COUNT(*) AS ROW_COUNT FROM PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT
+UNION ALL SELECT 'VW_SOURCE_OBSERVATION', COUNT(*) FROM PAPERSONAR.PROJECT_REPORTING.VW_SOURCE_OBSERVATION
+UNION ALL SELECT 'VW_CITATION_SNAPSHOT',  COUNT(*) FROM PAPERSONAR.PROJECT_REPORTING.VW_CITATION_SNAPSHOT
+UNION ALL SELECT 'VW_CATEGORY_COVERAGE',  COUNT(*) FROM PAPERSONAR.PROJECT_REPORTING.VW_CATEGORY_COVERAGE
+UNION ALL SELECT 'VW_PUBLISHED_BATCH',    COUNT(*) FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLISHED_BATCH
+UNION ALL SELECT 'VW_PIPELINE_HEALTH',    COUNT(*) FROM PAPERSONAR.PROJECT_REPORTING.VW_PIPELINE_HEALTH
+ORDER BY 1;

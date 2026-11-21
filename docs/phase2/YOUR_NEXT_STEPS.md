@@ -170,7 +170,7 @@ none. `EXECUTE TASK` can run a suspended root, so GitHub does not need it starte
 If you must repair manually, resume children only; leave the root suspended.
 
 **GitHub Actions is the only scheduler.** The Snowflake root has no cron schedule
-and runs on demand through `EXECUTE TASK`. GitHub extracts at `02:30 UTC` and calls
+and runs on demand through `EXECUTE TASK`. GitHub extracts at `01:00 UTC` and calls
 `python -m runner.cli trigger --drain` once after every source reaches `LOADED`.
 Do not add a second Snowflake schedule and do not RESUME the root.
 

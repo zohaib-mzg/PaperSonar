@@ -1,15 +1,17 @@
 # PaperSonar Phase 2 — Acceptance Report
 
-> **Historical notice (2026-11-18; updated 2026-11-19):** This report predates
+> **Historical notice (2026-11-18; updated 2026-11-22):** This report predates
 > the Nov 18 strict-ELT re-architecture. Its PASS/PASS-MOCK results describe the
 > earlier `src/papersonar` implementation, not the current `src/extract`,
-> `src/runner` and `sql/` layers. Live acceptance of the current implementation
-> is now **PARTIAL**: the OpenAlex full backfill reached `PUBLISHED` and is
-> recorded in
-> [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md).
-> OpenAlex incremental remains blocked by the Member+/Partner daily-sync plan.
+> `src/runner` and `sql/` layers. It is kept for history and is **not** the
+> current acceptance record. Live acceptance of the current implementation is
+> **closed with known limits** as of 2026-11-22: OpenAlex, Crossref, arXiv and
+> Zenodo batches are `PUBLISHED` with `critical_failures=0`, and the 12-rule DQ
+> gate runs live on every batch. Current evidence:
+> [evidence/2026-11-22-live-verification.md](evidence/2026-11-22-live-verification.md)
+> and [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md).
 > Use [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the current matrix
-> and `sql/99_tests/01_acceptance.sql` for current evidence queries.
+> and `sql/99_tests/03_phase2_closeout.sql` for current evidence queries.
 
 Date: 2026-11-14
 Branch: `phase2` (HEAD at time of writing: step 6 commit)

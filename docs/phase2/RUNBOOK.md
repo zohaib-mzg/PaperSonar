@@ -173,7 +173,7 @@ failed), `2` hard error/configuration failure.
 
 Workflow: `.github/workflows/phase2.yml`.
 
-- `schedule` (daily 04:30 UTC): always runs **sync only**, never backfill.
+- `schedule` (daily 01:00 UTC): always runs **sync only**, never backfill.
 - `workflow_dispatch`: choose `sync` (default), `backfill`, or `validate`.
 - `push`: lint + deterministic tests only.
 - Concurrency group `phase2-ingestion` prevents overlapping runs.

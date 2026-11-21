@@ -24,7 +24,8 @@ transforms, DQ gating and publication.
 - `config/sources.yml`, `config/taxonomy.yml`, `config/quality_rules.yml`
 - `src/extract/`, `src/runner/`
 - `sql/00_setup/` through `sql/09_tasks/`
-- `sql/99_tests/01_acceptance.sql`
+- `sql/99_tests/01_acceptance.sql`, `02_phase2_verification.sql`,
+  `03_phase2_closeout.sql`
 - `tests/sql/test_sql_contracts.py`
 - `.github/workflows/extract-load.yml`, `.github/workflows/deploy-ci.yml`
 
@@ -42,10 +43,26 @@ transforms, DQ gating and publication.
 
 ## Status boundary
 
-Live Snowflake evidence exists for the OpenAlex full backfill:
-[evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md).
-Do not read mocked/unit test success as warehouse acceptance for other sources
-or for incremental mode. OpenAlex incremental requires a Member+/Partner daily-sync
-plan and currently returns HTTP 403; the zero-record path is unit-tested only.
-Further evidence must be captured under `docs/phase2/evidence/` after an
-authorized account run.
+Phase 2 is **closed with known limits** as of 2026-11-22. Live Snowflake
+evidence exists for:
+
+- the OpenAlex full backfill —
+  [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md);
+- the multi-source closeout (OpenAlex, Crossref, arXiv and Zenodo published
+  with `critical_failures=0`, the 12-rule DQ gate live on every batch, the
+  model populated, plus the two defects found and fixed) —
+  [evidence/2026-11-22-live-verification.md](evidence/2026-11-22-live-verification.md).
+
+Still open, and deliberately not claimed as accepted:
+
+- incremental OpenAlex requires a Member+/Partner daily-sync plan (HTTP 403
+  today); the zero-record path is unit-tested only;
+- the DataCite backlog replays one window per run after the oversize-text fix;
+- categorization coverage is 4–6% against the 60% DQ-009 target — Phase 3
+  work package WP1;
+- account housekeeping (service-user defaults, one stuck batch, unused
+  warehouse) — listed in the closeout evidence §10.
+
+Do not read mocked/unit test success as warehouse acceptance for anything
+that is not listed above. Further evidence must be captured under
+`docs/phase2/evidence/` after an authorized account run.

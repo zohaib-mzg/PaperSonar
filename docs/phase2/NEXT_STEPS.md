@@ -2,7 +2,7 @@
 
 ## Decision: GitHub is the scheduler
 
-- **GitHub Actions** is the only scheduler. The daily cron is `30 2 * * *` (**02:30 UTC**).
+- **GitHub Actions** is the only scheduler. The daily cron is `0 1 * * *` (**01:00 UTC**).
 - GitHub extracts every source with `--no-task`, then runs `python -m runner.cli trigger --drain` once after all batches reach `LOADED`.
 - **Snowflake does not schedule anything.** `TASK_ELT_ROOT` has no `SCHEDULE` and runs only through `EXECUTE TASK`.
 - Do not add a second Snowflake cron. Do not schedule sources independently in Snowflake.
@@ -13,14 +13,63 @@ This avoids two drivers running the same global `CURRENT_BATCH` and keeps extrac
 
 ## 0. Current state
 
-- Code is committed and pushed to `origin/phase2`.
-- The OpenAlex full backfill `BATCH_07D9668D4CBED88D815D30CA` reached `PUBLISHED`: 5 files, 168,725 records, 0 critical DQ failures.
-- Evidence: [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md).
-- No tag, backup branch, force push, or merge to `main` has been performed.
+Phase 2 is **closed with known limits** as of 2026-11-22. Everything below is
+kept as the reference procedure for a fresh account or a repeat deployment.
+
+- Code is committed and pushed to `origin/main`; Phase 3 work continues on the
+  `phase3` branch.
+- Published batches (live): OpenAlex `BATCH_07D9668D4CBED88D815D30CA`,
+  Crossref `BATCH_B51983B70B26023F22201AE2` and
+  `BATCH_DAB12A7209208BE375D89C0B`, arXiv `BATCH_3DF8101D66B0797A217FD877`,
+  Zenodo `BATCH_A75F9C61B9BF73B40CBC8C54` — all with `critical_failures=0`.
+- Evidence:
+  [evidence/2026-11-19-openalex-full-load.md](evidence/2026-11-19-openalex-full-load.md)
+  and
+  [evidence/2026-11-22-live-verification.md](evidence/2026-11-22-live-verification.md).
+- Two defects were found by live verification and fixed: the DQ-012
+  crosswalk fan-out (false CRITICAL failure) and the DataCite oversize-text
+  truncation. Both are covered by regression tests.
+- No tag, backup branch, force push, or merge to `main` has been performed
+  beyond the normal fast-forward merges.
+
+### 0.1 Remaining Phase 2 housekeeping (account owner)
+
+Run these once as `ACCOUNTADMIN`; they are audit-truth fixes, not new
+features.
+
+```sql
+-- 1. Close the batch that is stuck in EXTRACTING (DQ-001 failed: 4 file count mismatches)
+UPDATE PAPERSONAR.PROJECT_AUDIT.BATCH
+SET STATUS = 'FAILED',
+    ERROR_SUMMARY = 'Closed manually: DQ-001 file count mismatch; staged files will not be replayed',
+    FINISHED_AT = CURRENT_TIMESTAMP()
+WHERE BATCH_ID = 'BATCH_70CEE97747ED6A70D3E40411'
+  AND STATUS NOT IN ('PUBLISHED', 'FAILED', 'SKIPPED');
+
+-- 2. Point the service user at the roles and warehouse that actually exist
+ALTER USER SVC_PAPERSONAR SET DEFAULT_ROLE = 'PAPERSONAR_LOADER';
+ALTER USER SVC_PAPERSONAR SET DEFAULT_WAREHOUSE = 'WH_PAPERSONAR_ELT';
+
+-- 3. Drop the unused warehouse
+DROP WAREHOUSE IF EXISTS PAPERSONAR_WH;
+```
+
+Optional: revoke `PAPERSONAR_ADMIN` from the service user (keep the owner
+grant) and suspend the account-default `COMPUTE_WH` if it is not used
+elsewhere.
+
+### 0.2 Known limits carried into Phase 3
+
+| Limit | Handling |
+|---|---|
+| Incremental OpenAlex needs a Member+/Partner plan (HTTP 403) | keep OpenAlex on explicit full windows; no publication-date fallback |
+| DataCite backlog (windows 2026-11-18, 2026-11-19) | replay one window per run after the width fix; not required for acceptance |
+| Categorization coverage 4–6% vs the 60% DQ-009 target | Phase 3 WP1: expand `config/taxonomy.yml`, seed `REF_TAXONOMY_MAP`, re-categorize published batches |
+| `DIM_TOPIC` has no fact bridge | Phase 3 WP2 adds it only if the business questions require it |
 
 ---
 
-## 1. One-time Snowflake setup — as `ACCOUNTADMIN`
+## 1. One-time Snowflake setup — as `ACCOUNTADMIN` (completed 2026-11-18)
 
 1. Generate a key pair and set the public key on the service user:
 
@@ -61,7 +110,7 @@ Never use `ACCOUNTADMIN` in GitHub Actions or normal deployment.
 
 ---
 
-## 2. Configure GitHub
+## 2. Configure GitHub (completed 2026-11-19)
 
 Repository → **Settings → Secrets and variables → Actions**.
 
@@ -97,7 +146,7 @@ Create environment **`snowflake-production`** with required reviewers. `deploy-c
 
 ---
 
-## 3. Deploy SQL
+## 3. Deploy SQL (completed; now automatic on push to `main`)
 
 `deploy-ci.yml` auto-deploys only on pushes to `main` for `sql/**`, `config/**`, `src/runner/**`, `pyproject.toml`, and the workflow itself. Our push was to `phase2`, so do one of these:
 
@@ -124,9 +173,9 @@ suspended root with `EXECUTE TASK`. Do not resume the root manually.
 
 ---
 
-## 4. First live incremental run
+## 4. First live incremental run (completed 2026-11-19..21)
 
-The daily cron runs by itself at 02:30 UTC. To test manually first:
+The daily cron runs by itself at 01:00 UTC. To test manually first:
 
 Actions → **extract-load** → Run workflow:
 
@@ -172,6 +221,14 @@ ORDER BY SCHEDULED_TIME DESC;
 
 Save sanitized outputs under `docs/phase2/evidence/`. Never save private keys, passphrases, or unsanitized account identifiers.
 
+The maintained read-only query packs are:
+
+| File | Purpose |
+|---|---|
+| `sql/99_tests/01_acceptance.sql` | acceptance queries from the specification pack |
+| `sql/99_tests/02_phase2_verification.sql` | full verification pack: environment, tasks, pipeline state, model, publication, cost, failure drill-down (sections A–H) |
+| `sql/99_tests/03_phase2_closeout.sql` | closeout pack: batch ledger, publication contract, latest DQ verdict, watermarks, housekeeping (sections J) |
+
 ---
 
 ## 6. Force push / tag / backup — only with approval
@@ -189,10 +246,12 @@ Nothing here has been tagged, backed up, force-pushed, or merged to `main` yet.
 
 | Item | Owner | Value |
 |---|---|---|
-| Scheduler | GitHub Actions | `30 2 * * *` (02:30 UTC) |
+| Scheduler | GitHub Actions | `0 1 * * *` (01:00 UTC) |
 | Transformation | Snowflake task graph | `TASK_ELT_ROOT` + 9 children/finalizer, on demand |
 | Extraction role | GitHub secret | `PAPERSONAR_LOADER` |
 | Deploy role | GitHub secret | `PAPERSONAR_ADMIN` |
 | Approval environment | GitHub | `snowflake-production` |
 | OpenAlex incremental gate | Repo variable | `OPENALEX_DAILY_SYNC=true` after Member+ |
 | Detailed setup | This repo | [YOUR_NEXT_STEPS.md](YOUR_NEXT_STEPS.md) |
+| Phase 2 closeout evidence | This repo | [evidence/2026-11-22-live-verification.md](evidence/2026-11-22-live-verification.md) |
+| Phase 3 plan | This repo | [../phase3/PHASE3_PLAN.md](../phase3/PHASE3_PLAN.md) |

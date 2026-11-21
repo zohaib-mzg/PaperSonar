@@ -3,7 +3,7 @@
 ## Workflow A: `extract-load`
 Location: `.github/workflows/extract-load.yml`.
 
-Triggers: GitHub cron at `02:30 UTC` (the only scheduler) and `workflow_dispatch` with inputs:
+Triggers: GitHub cron at `01:00 UTC` (the only scheduler) and `workflow_dispatch` with inputs:
 - `mode`: `full` or `incremental`
 - `source`: one source or `all`
 - `from_date`
