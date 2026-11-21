@@ -26,7 +26,7 @@ def _triggers(workflow: dict) -> dict:
 def test_extract_workflow_is_the_only_scheduler() -> None:
     extract = _load("extract-load.yml")
     triggers = _triggers(extract)
-    assert triggers["schedule"][0]["cron"] == "30 2 * * *"
+    assert triggers["schedule"][0]["cron"] == "0 1 * * *"
 
     graph_sql = (
         PROJECT_ROOT / "sql" / "09_tasks" / "02_task_graph.sql"
