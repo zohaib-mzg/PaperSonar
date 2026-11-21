@@ -54,7 +54,21 @@ def list_records(
         if set_spec:
             params["set"] = set_spec
 
-    response = http.get(base_url, params=params)
+    try:
+        response = http.get(base_url, params=params)
+    except PermanentHttpError as exc:
+        # Zenodo returns HTTP 422 for an expired resumption token instead of an
+        # OAI-PMH ``badResumptionToken`` XML error. Treat it like any other
+        # expired token so the runner restarts the bounded window idempotently.
+        if resumption_token and "HTTP 422" in str(exc):
+            raise RetryableHttpError(
+                "OAI-PMH resumption token rejected (HTTP 422); restart the bounded window"
+            ) from exc
+        raise
+    if response.status == 422 and resumption_token:
+        raise RetryableHttpError(
+            "OAI-PMH resumption token rejected (HTTP 422); restart the bounded window"
+        )
     descriptor = {"method": "GET", "url": base_url, "params": params}
     return parse_page(response.body), next_token(response.body), descriptor
 

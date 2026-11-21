@@ -11,7 +11,7 @@ from extract.arxiv import ArxivExtractor
 from extract.base import FetchWindow
 from extract.crossref import CrossrefExtractor
 from extract.datacite import DataCiteExtractor
-from extract.http import HttpResponse, PermanentHttpError
+from extract.http import HttpResponse, PermanentHttpError, RetryableHttpError
 from extract.openalex import OpenAlexExtractor
 from extract.zenodo import ZenodoExtractor
 
@@ -210,6 +210,24 @@ def test_zenodo_uses_bounded_oai_window() -> None:
     assert http.calls[0][1]["until"] == "2024-02-01"
     assert http.calls[0][1]["metadataPrefix"] == "oai_datacite"
     assert pages[1].next_cursor is None
+
+
+def test_zenodo_http_422_on_resumption_token_restarts_window() -> None:
+    http = FakeHttp(
+        [
+            (200, ARXIV_PAGE.replace(b"arXiv", b"oai_datacite")),
+            (422, b"Invalid resumptionToken"),
+            (200, ARXIV_PAGE.replace(b"arXiv", b"oai_datacite").replace(b"token-2", b"")),
+        ]
+    )
+    extractor = ZenodoExtractor({"metadata_prefix": "oai_datacite"})
+    window = FetchWindow("zenodo", "record", "2024-01-01", "2024-02-01", "incremental")
+
+    with pytest.raises(RetryableHttpError):
+        list(extractor.iter_pages(http, window))
+
+    assert http.calls[0][1] is not None and "resumptionToken" not in http.calls[0][1]
+    assert http.calls[1][1] is not None and http.calls[1][1]["resumptionToken"] == "token-2"
 
 
 def test_oai_permanent_error_is_raised() -> None:
