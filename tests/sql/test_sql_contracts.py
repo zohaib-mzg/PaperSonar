@@ -8,6 +8,7 @@ can be checked without a warehouse connection.
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import yaml
@@ -279,3 +280,123 @@ def test_oversize_source_text_columns_are_wide_enough() -> None:
     widen = _read(SQL_ROOT / "03_silver" / "04_widen_oversize_text.sql")
     assert "PUBLICATION_DATE_RAW SET DATA TYPE VARCHAR(4000)" in widen
     assert "TOPIC_NAME SET DATA TYPE VARCHAR(4000)" in widen
+
+
+def _taxonomy_config() -> dict:
+    return yaml.safe_load(_read(PROJECT_ROOT / "config" / "taxonomy.yml"))
+
+
+def test_taxonomy_seed_is_reproducible_from_the_config() -> None:
+    """The deployed seed is generated from config/taxonomy.yml.
+
+    A hand-edited seed would silently drift from the contract, so regenerating
+    it must reproduce the committed file byte for byte.
+    """
+    sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+    try:
+        import generate_taxonomy_seed
+    finally:
+        sys.path.pop(0)
+
+    expected = generate_taxonomy_seed.render(_taxonomy_config())
+    actual = _read(SQL_ROOT / "04_categorization" / "01_seed_taxonomy.sql")
+    assert actual == expected, (
+        "sql/04_categorization/01_seed_taxonomy.sql is stale; "
+        "run python scripts/generate_taxonomy_seed.py"
+    )
+
+
+def test_taxonomy_source_mappings_match_config() -> None:
+    """Every native source taxonomy mapping in the contract is seeded."""
+    config = _taxonomy_config()
+    seed = _read(SQL_ROOT / "04_categorization" / "01_seed_taxonomy.sql")
+    category_keys = {category["key"] for category in config["categories"]}
+
+    for mapping in config.get("source_mappings", []):
+        assert mapping["source"] in seed, (
+            f"mapping source missing from SQL seed: {mapping['source']}"
+        )
+        assert mapping["value"] in seed, (
+            f"mapping value missing from SQL seed: {mapping['value']}"
+        )
+        assert mapping["category"] in category_keys, (
+            f"mapping points at an unknown category: {mapping['category']}"
+        )
+
+    assert "MERGE INTO PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP" in seed, (
+        "the taxonomy seed must populate REF_TAXONOMY_MAP"
+    )
+
+
+def test_every_taxonomy_category_is_reachable() -> None:
+    """Each category except the unclassified default needs a way to be assigned."""
+    config = _taxonomy_config()
+    category_keys = {category["key"] for category in config["categories"]}
+    reachable = {rule["category"] for rule in config["rules"]}
+    reachable |= {
+        mapping["category"] for mapping in config.get("source_mappings", [])
+    }
+    unreachable = category_keys - reachable - {"unclassified"}
+    assert not unreachable, f"categories without any rule or mapping: {sorted(unreachable)}"
+
+
+def test_categorization_ranks_native_taxonomy_above_keywords() -> None:
+    """Native source taxonomy values are curated and must outrank keyword hits."""
+    procedure = _read(SQL_ROOT / "04_categorization" / "02_categorize_batch.sql")
+    assert "PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP" in procedure, (
+        "the categorization procedure must read the native taxonomy map"
+    )
+    assert "'SOURCE_TAXONOMY'" in procedure, (
+        "the categorization procedure must record the source taxonomy method"
+    )
+    assert "'SOURCE_TAXONOMY', 1" in procedure, (
+        "native taxonomy matches must outrank keyword matches"
+    )
+    assert "'KEYWORD', 2" in procedure, (
+        "keyword matches must rank below native taxonomy matches"
+    )
+    assert "LENGTH(k.PATTERN) <= 4 AND CONTAINS(' ' || tt.TOKEN || ' '" in procedure, (
+        "short keyword patterns must match on token boundaries"
+    )
+
+
+def test_taxonomy_contract_covers_the_research_domains() -> None:
+    """The taxonomy must not be a software-engineering-only spine any more.
+
+    Phase 2 measured 4-6% categorization coverage because every rule targeted
+    software engineering or AI, while the corpus is general scholarship. The
+    v2 contract must therefore contain the broad domains and must keep the
+    software-engineering spine for the course's own focus area.
+    """
+    config = _taxonomy_config()
+    category_keys = {category["key"] for category in config["categories"]}
+    required = {
+        "computer-science",
+        "health-sciences",
+        "life-sciences",
+        "natural-sciences",
+        "earth-and-environment",
+        "engineering-and-technology",
+        "social-sciences",
+        "humanities",
+        "arts-and-culture",
+        "software-engineering",
+        "ai-ml",
+        "unclassified",
+    }
+    assert required <= category_keys, (
+        f"missing broad domains: {sorted(required - category_keys)}"
+    )
+
+    keyword_patterns = {
+        rule["pattern"] for rule in config["rules"] if rule["field"] == "keywords"
+    }
+    assert len(keyword_patterns) >= 100, (
+        "the native taxonomy rules are too thin to lift DQ-009 coverage"
+    )
+
+    sources = {
+        mapping["source"] for mapping in config.get("source_mappings", [])
+    }
+    assert "ARXIV" in sources, "arXiv category codes must be mapped explicitly"
+    assert "DATACITE" in sources, "DataCite subjects must be mapped explicitly"

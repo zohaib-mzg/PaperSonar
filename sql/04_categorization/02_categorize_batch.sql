@@ -1,9 +1,10 @@
 -- =============================================================================
 -- Purpose: Score every output touched by the active batch against the versioned
---          keyword taxonomy, apply auditable overrides, and write one primary
---          category plus secondary candidates to the staging bridge.
+--          keyword taxonomy and the native source taxonomy mappings, apply
+--          auditable overrides, and write one primary category plus secondary
+--          candidates to the staging bridge.
 -- Inputs: SLV_OUTPUT_CROSSWALK, SLV_SOURCE_OBSERVATION, REF_CATEGORY_KEYWORD,
---         CATEGORY_OVERRIDE, CURRENT_BATCH.
+--         REF_TAXONOMY_MAP, CATEGORY_OVERRIDE, CURRENT_BATCH.
 -- Outputs: STG_OUTPUT_CATEGORY rows for the batch.
 -- Idempotent: Yes - batch rows are deleted and rebuilt deterministically.
 -- Owner: PAPERSONAR_TRANSFORMER
@@ -13,6 +14,10 @@
 -- Short patterns (<= 4 characters) require token boundaries so "rag" does not
 -- match "storage". Patterns are normalized with the same title normalizer used
 -- for silver, so punctuation differences do not change the score.
+--
+-- Ranking order: operator override (1000) > native source taxonomy match >
+-- keyword/topic score > unclassified default. A native taxonomy value is a
+-- curated label supplied by the source, so it outranks a keyword hit.
 
 CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_STAGING.SP_CATEGORIZE_BATCH()
 RETURNS VARCHAR
@@ -22,6 +27,7 @@ $$
 DECLARE
   batch_id VARCHAR DEFAULT NULL;
   scored_rows NUMBER DEFAULT 0;
+  taxonomy_version VARCHAR DEFAULT 'v2';
 BEGIN
   SELECT BATCH_ID INTO :batch_id
   FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH
@@ -30,6 +36,9 @@ BEGIN
   IF (batch_id IS NULL) THEN
     RETURN 'NO_BATCH';
   END IF;
+
+  SELECT MAX(RULE_VERSION) INTO :taxonomy_version
+  FROM PAPERSONAR.PROJECT_REF.REF_CATEGORY_KEYWORD;
 
   DELETE FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_CATEGORY WHERE BATCH_ID = :batch_id;
 
@@ -40,6 +49,7 @@ BEGIN
   WITH src AS (
     SELECT
       c.OUTPUT_BK,
+      o.SOURCE_NAME,
       o.TITLE_NORMALIZED,
       o.TOPICS
     FROM PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK c
@@ -87,6 +97,7 @@ BEGIN
   topic_tokens AS (
     SELECT
       s.OUTPUT_BK,
+      s.SOURCE_NAME,
       LOWER(
         COALESCE(
           t.value:name::STRING,
@@ -106,8 +117,28 @@ BEGIN
     FROM topic_tokens tt
     JOIN rules k
       ON k.FIELD_NAME = 'keywords'
-     AND CONTAINS(tt.TOKEN, k.PATTERN)
+     AND (
+       (LENGTH(k.PATTERN) <= 4 AND CONTAINS(' ' || tt.TOKEN || ' ', ' ' || k.PATTERN || ' '))
+       OR (LENGTH(k.PATTERN) > 4 AND CONTAINS(tt.TOKEN, k.PATTERN))
+     )
     GROUP BY tt.OUTPUT_BK, k.CATEGORY_KEY
+  ),
+  taxonomy_matches AS (
+    SELECT
+      tt.OUTPUT_BK,
+      m.CATEGORY_KEY,
+      SUM(m.BASE_WEIGHT * 2) AS SCORE
+    FROM topic_tokens tt
+    JOIN (
+      SELECT SOURCE_NAME,
+             UPPER(TRIM(SOURCE_VALUE)) AS SOURCE_VALUE,
+             CATEGORY_KEY
+      FROM PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP
+      WHERE IS_ACTIVE
+    ) m
+      ON m.SOURCE_NAME = UPPER(tt.SOURCE_NAME)
+     AND m.SOURCE_VALUE = UPPER(TRIM(tt.TOKEN))
+    GROUP BY tt.OUTPUT_BK, m.CATEGORY_KEY
   ),
   keyword_scores AS (
     SELECT OUTPUT_BK, CATEGORY_KEY, SUM(SCORE) AS SCORE
@@ -132,7 +163,9 @@ BEGIN
   combined AS (
     SELECT OUTPUT_BK, CATEGORY_KEY, SCORE, METHOD, PRIORITY FROM override_scores
     UNION ALL
-    SELECT OUTPUT_BK, CATEGORY_KEY, SCORE, 'KEYWORD', 1 FROM keyword_scores
+    SELECT OUTPUT_BK, CATEGORY_KEY, SCORE, 'SOURCE_TAXONOMY', 1 FROM taxonomy_matches
+    UNION ALL
+    SELECT OUTPUT_BK, CATEGORY_KEY, SCORE, 'KEYWORD', 2 FROM keyword_scores
   ),
   ranked AS (
     SELECT
@@ -166,7 +199,7 @@ BEGIN
     assignments.CATEGORY_RANK,
     IFF(assignments.CATEGORY_RANK = 1, TRUE, FALSE),
     assignments.METHOD,
-    'v1',
+    :taxonomy_version,
     CURRENT_TIMESTAMP()
   FROM (
     SELECT OUTPUT_BK, CATEGORY_KEY, SCORE, METHOD, CATEGORY_RANK FROM ranked

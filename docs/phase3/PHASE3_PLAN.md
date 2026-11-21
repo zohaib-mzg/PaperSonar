@@ -96,6 +96,9 @@ is invented anywhere.
 
 ### WP1 — Taxonomy expansion (0.5–1 day) — prerequisite
 
+*Status: code complete on `phase3`, awaiting deployment and re-categorization.
+See [WP1_TAXONOMY_RUNBOOK.md](WP1_TAXONOMY_RUNBOOK.md).*
+
 * Expand `config/taxonomy.yml` from 37 keyword rules to cover the observed
   corpus: mine the actual titles/topics of the published corpus for the most
   frequent terms per existing category, add synonyms and inflections, keep the
