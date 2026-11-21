@@ -40,6 +40,10 @@ class FetchWindow:
     # Set only when resuming a capped incremental window. Adapters ignore it;
     # the extraction runner passes it as the first page cursor.
     resume_cursor: str | None = None
+    # OAI only: restart an expired resumption token from this datestamp instead
+    # of replaying the whole window. It deliberately does not affect window_id,
+    # so all shards for the logical window keep their deterministic names.
+    resume_from: str | None = None
 
     @property
     def window_id(self) -> str:

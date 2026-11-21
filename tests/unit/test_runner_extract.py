@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from extract.base import FetchWindow, Page, batch_id_for
+from extract.http import RetryableHttpError
 from runner import extract_run
 from runner.config import Settings
 
@@ -38,6 +39,30 @@ class FakeAdapter:
     def iter_pages(self, http: Any, window: FetchWindow, cursor: str | None = None) -> Any:
         self.calls.append(cursor)
         yield from self._pages
+
+
+class ExpiringOaiAdapter:
+    """OAI adapter that expires its token twice before completing."""
+
+    def __init__(self, progress: dict[str, Any]) -> None:
+        self.progress = progress
+        self.windows: list[FetchWindow] = []
+        self.cursors: list[str | None] = []
+
+    def iter_pages(self, http: Any, window: FetchWindow, cursor: str | None = None) -> Any:
+        attempt = len(self.windows) + 1
+        self.windows.append(window)
+        self.cursors.append(cursor)
+        datestamp = f"2026-11-14T10:00:0{attempt}Z"
+        yield Page(
+            records=[{"identifier": f"oai:{attempt}", "datestamp": datestamp}],
+            next_cursor=f"token-{attempt}",
+            request={},
+            records_seen=1,
+        )
+        if attempt <= 2:
+            self.progress["last_datestamp"] = datestamp
+            raise RetryableHttpError("OAI-PMH resumption token rejected (HTTP 422)")
 
 
 class FakeSnowflake:
@@ -522,3 +547,27 @@ def test_interrupted_capped_batch_is_finalized_without_refetching(
     assert report.cap_cursor == "p2"
     assert snowflake.loaded == [(1, 3)]
     assert snowflake.loaded_capped == [True]
+
+
+def test_repeated_oai_token_expiry_resumes_from_latest_datestamp() -> None:
+    progress: dict[str, Any] = {
+        "last_datestamp": None,
+        "seen_ids": set(),
+        "restarted": False,
+    }
+    adapter = ExpiringOaiAdapter(progress)
+    window = FetchWindow(
+        "zenodo", "record", "2026-11-14", "2026-11-21", "incremental", resume_cursor="expired"
+    )
+
+    pages = list(
+        extract_run._pages_with_restart(
+            adapter, object(), window, "expired", "BATCH_OAI", progress
+        )
+    )
+
+    assert len(pages) == 3
+    assert adapter.cursors == ["expired", None, None]
+    assert adapter.windows[1].resume_from == "2026-11-14T10:00:01Z"
+    assert adapter.windows[2].resume_from == "2026-11-14T10:00:02Z"
+    assert progress["restarted"] is True

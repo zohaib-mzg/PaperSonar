@@ -39,7 +39,7 @@ class ArxivExtractor:
                 http,
                 self.base_url,
                 metadata_prefix=self._metadata_prefix,
-                from_date=window.window_start,
+                from_date=window.resume_from or window.window_start,
                 until_date=None,
                 resumption_token=next_token,
                 set_spec=str(self._set_spec) if self._set_spec else None,

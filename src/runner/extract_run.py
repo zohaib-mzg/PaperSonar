@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from extract.base import (
@@ -317,8 +317,15 @@ def _extract_pages(
     files = started_shards
     capped = False
     cap_cursor: str | None = None
+    # Mutable hand-off to the restart handler: it records the last processed
+    # datestamp so an expired OAI token can resume without replaying the window.
+    progress: dict[str, Any] = {
+        "last_datestamp": None,
+        "seen_ids": set(),
+        "restarted": False,
+    }
 
-    for page in _pages_with_restart(adapter, http, window, resume_cursor, batch_id):
+    for page in _pages_with_restart(adapter, http, window, resume_cursor, batch_id, progress):
         remaining = (
             None
             if max_records is None
@@ -336,6 +343,16 @@ def _extract_pages(
 
         page_records: list[dict[str, Any]] = []
         for record in page.records:
+            datestamp = record.get("datestamp")
+            if isinstance(datestamp, str) and datestamp:
+                last_datestamp = progress["last_datestamp"]
+                if not last_datestamp or datestamp > last_datestamp:
+                    progress["last_datestamp"] = datestamp
+            record_id = record.get("identifier") or record.get("id")
+            if progress["restarted"] and record_id and record_id in progress["seen_ids"]:
+                continue
+            if record_id:
+                progress["seen_ids"].add(record_id)
             if oversized(record):
                 merge_oversize(oversize, record)
                 if not dry_run and snowflake is not None:
@@ -447,27 +464,55 @@ def _extract_pages(
     return total_records, files, capped, cap_cursor
 
 
+_MAX_OAI_RESTARTS = 5
+
+
 def _pages_with_restart(
     adapter: Any,
     http: HttpClient,
     window: FetchWindow,
     resume_cursor: str | None,
     batch_id: str,
+    progress: dict[str, Any],
 ):
-    """Yield pages; restart the window once when an OAI token has expired."""
+    """Yield pages; resume from the last OAI datestamp when a token expires.
+
+    An OAI resumption token can expire after a slow page or a retry. Replaying
+    the entire window would duplicate already-staged records, so the runner
+    restarts from the newest datestamp it has already processed. The fallback
+    to the full window is kept for the case where no page was processed yet.
+    """
     cursor = resume_cursor
-    restarted = False
+    current_window = window
+    restarts = 0
+    tried_restart_keys: set[str] = set()
     while True:
         try:
-            yield from adapter.iter_pages(http, window, cursor)
+            yield from adapter.iter_pages(http, current_window, cursor)
             return
         except RetryableHttpError as exc:
-            if _is_expired_token(exc) and not restarted and cursor:
-                logger.warning("%s: resumption token expired; restarting window", batch_id)
-                cursor = None
-                restarted = True
-                continue
-            raise
+            if not _is_expired_token(exc) or restarts >= _MAX_OAI_RESTARTS:
+                raise
+            last_datestamp = progress.get("last_datestamp")
+            restart_key = str(last_datestamp or "<window-start>")
+            if restart_key in tried_restart_keys:
+                # This exact resume point already failed; use the full window.
+                next_window = replace(window, resume_from=None)
+            elif last_datestamp:
+                next_window = replace(window, resume_from=str(last_datestamp))
+            else:
+                next_window = replace(window, resume_from=None)
+            tried_restart_keys.add(restart_key)
+            restarts += 1
+            cursor = None
+            progress["restarted"] = True
+            current_window = next_window
+            logger.warning(
+                "%s: resumption token expired; restarting from %s",
+                batch_id,
+                last_datestamp or "window start",
+            )
+            continue
 
 
 def _flush_shard(
