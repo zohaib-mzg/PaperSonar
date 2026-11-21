@@ -99,41 +99,46 @@ def render(config: dict) -> str:
     version = str(config["taxonomy_version"])
 
     parts = [HEADER]
-    for category in config["categories"]:
-        parent = category.get("parent")
-        parent_sql = "NULL" if parent is None else _sql_literal(parent)
-        parts.append(
-            "    ({key}, {label}, {parent}),\n".format(
-                key=_sql_literal(category["key"]),
-                label=_sql_literal(category["label"]),
-                parent=parent_sql,
-            )
+    category_rows = [
+        "    ({key}, {label}, {parent})".format(
+            key=_sql_literal(category["key"]),
+            label=_sql_literal(category["label"]),
+            parent="NULL" if category.get("parent") is None else _sql_literal(category["parent"]),
         )
+        for category in config["categories"]
+    ]
+    parts.append(_rows(category_rows))
     parts.append(CATEGORY_MERGE_TAIL.format(version=version))
 
-    for index, rule in enumerate(config["rules"], start=1):
-        weight = float(rule.get("weight", 1.0))
-        parts.append(
-            "    ('KW-{index:03d}', {category}, {pattern}, {field}, {weight}),\n".format(
-                index=index,
-                category=_sql_literal(rule["category"]),
-                pattern=_sql_literal(rule["pattern"]),
-                field=_sql_literal(rule["field"]),
-                weight=f"{weight:.2f}",
-            )
+    keyword_rows = [
+        "    ('KW-{index:03d}', {category}, {pattern}, {field}, {weight})".format(
+            index=index,
+            category=_sql_literal(rule["category"]),
+            pattern=_sql_literal(rule["pattern"]),
+            field=_sql_literal(rule["field"]),
+            weight=f"{float(rule.get('weight', 1.0)):.2f}",
         )
+        for index, rule in enumerate(config["rules"], start=1)
+    ]
+    parts.append(_rows(keyword_rows))
     parts.append(KEYWORD_MERGE_TAIL.format(version=version))
 
-    for mapping in config.get("source_mappings", []):
-        parts.append(
-            "    ({source}, {value}, {category}),\n".format(
-                source=_sql_literal(mapping["source"]),
-                value=_sql_literal(mapping["value"]),
-                category=_sql_literal(mapping["category"]),
-            )
+    mapping_rows = [
+        "    ({source}, {value}, {category})".format(
+            source=_sql_literal(mapping["source"]),
+            value=_sql_literal(mapping["value"]),
+            category=_sql_literal(mapping["category"]),
         )
+        for mapping in config.get("source_mappings", [])
+    ]
+    parts.append(_rows(mapping_rows))
     parts.append(MAPPING_MERGE_TAIL.format(version=version))
     return "".join(parts)
+
+
+def _rows(rows: list[str]) -> str:
+    """Join VALUES rows without a trailing comma (Snowflake rejects one)."""
+    return "\n".join(rows) + "\n" if rows else ""
 
 
 def main() -> int:

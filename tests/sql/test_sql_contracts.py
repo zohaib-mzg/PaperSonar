@@ -282,6 +282,27 @@ def test_oversize_source_text_columns_are_wide_enough() -> None:
     assert "TOPIC_NAME SET DATA TYPE VARCHAR(4000)" in widen
 
 
+def test_no_trailing_comma_before_closing_parenthesis() -> None:
+    """A trailing comma before ")" is a Snowflake syntax error.
+
+    The generated taxonomy seed shipped with one and the deployment failed at
+    compile time ("syntax error unexpected ')'"). The pattern is cheap to
+    detect statically, so it is guarded for every SQL file.
+    """
+    offenders: list[str] = []
+    for path in _sql_files():
+        lines = _read(path).splitlines()
+        for index, line in enumerate(lines):
+            if not line.strip().startswith(")"):
+                continue
+            previous = index - 1
+            while previous >= 0 and not lines[previous].strip():
+                previous -= 1
+            if previous >= 0 and lines[previous].rstrip().endswith(","):
+                offenders.append(f"{path.relative_to(PROJECT_ROOT)}:{index + 1}")
+    assert not offenders, "trailing comma before closing parenthesis:\n" + "\n".join(offenders)
+
+
 def _taxonomy_config() -> dict:
     return yaml.safe_load(_read(PROJECT_ROOT / "config" / "taxonomy.yml"))
 
