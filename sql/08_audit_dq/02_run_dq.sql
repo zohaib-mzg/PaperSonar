@@ -507,15 +507,20 @@ BEGIN
       0,
       IFF(COUNT(*) = 0, 'PASS', 'FAIL')
     FROM (
-      SELECT crosswalk.OUTPUT_BK
-      FROM PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK crosswalk
-      LEFT JOIN PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_CATEGORY category
-        ON category.BATCH_ID = crosswalk.BATCH_ID
-       AND category.OUTPUT_BK = crosswalk.OUTPUT_BK
-       AND category.IS_PRIMARY
-      WHERE crosswalk.BATCH_ID = :batch_id
-      GROUP BY crosswalk.OUTPUT_BK
-      HAVING COUNT(category.OUTPUT_BK) <> 1
+      SELECT touched.OUTPUT_BK
+      FROM (
+        SELECT DISTINCT OUTPUT_BK
+        FROM PAPERSONAR.PROJECT_SILVER.SLV_OUTPUT_CROSSWALK
+        WHERE BATCH_ID = :batch_id
+      ) touched
+      LEFT JOIN (
+        SELECT OUTPUT_BK, COUNT(*) AS PRIMARY_COUNT
+        FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_CATEGORY
+        WHERE BATCH_ID = :batch_id AND IS_PRIMARY
+        GROUP BY OUTPUT_BK
+      ) category
+        ON category.OUTPUT_BK = touched.OUTPUT_BK
+      WHERE COALESCE(category.PRIMARY_COUNT, 0) <> 1
     ) invalid_primary
   ) checks
   LEFT JOIN PAPERSONAR.PROJECT_REF.REF_DQ_RULE rule

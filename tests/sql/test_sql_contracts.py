@@ -229,3 +229,28 @@ def test_elt_root_has_no_snowflake_cron_schedule() -> None:
     assert "SCHEDULE" not in executable
     assert "USING CRON" not in executable
     assert "OVERLAP_POLICY = NO_OVERLAP" in executable
+
+
+def test_dq012_counts_primary_categories_without_crosswalk_fanout() -> None:
+    """DQ-012 must count primary assignments per output, not joined rows.
+
+    SLV_OUTPUT_CROSSWALK is unique per source observation, so one canonical
+    output can own several crosswalk rows in a batch. Counting the joined rows
+    instead of the distinct primary assignments reports a false CRITICAL
+    failure and blocks publication of an otherwise clean batch.
+    """
+    procedure = _read(SQL_ROOT / "08_audit_dq" / "02_run_dq.sql")
+    start = procedure.index("'DQ-012'")
+    block = procedure[start:]
+    assert "COUNT(category.OUTPUT_BK) <> 1" not in block, (
+        "DQ-012 must not count joined crosswalk rows as primary category assignments"
+    )
+    assert "SELECT DISTINCT OUTPUT_BK" in block, (
+        "DQ-012 must deduplicate the outputs touched by the batch"
+    )
+    assert "PRIMARY_COUNT" in block, (
+        "DQ-012 must count primary category assignments per output"
+    )
+    assert "COALESCE(category.PRIMARY_COUNT, 0) <> 1" in block, (
+        "DQ-012 must fail when an output has zero or more than one primary category"
+    )
