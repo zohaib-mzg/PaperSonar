@@ -137,8 +137,13 @@ def render(config: dict) -> str:
 
 
 def _rows(rows: list[str]) -> str:
-    """Join VALUES rows without a trailing comma (Snowflake rejects one)."""
-    return "\n".join(rows) + "\n" if rows else ""
+    """Join VALUES rows with commas, without a trailing comma.
+
+    Snowflake rejects both a missing separator ("unexpected '('") and a
+    trailing comma ("unexpected ')'"), so the separator is added between rows
+    only.
+    """
+    return ",\n".join(rows) + "\n" if rows else ""
 
 
 def main() -> int:

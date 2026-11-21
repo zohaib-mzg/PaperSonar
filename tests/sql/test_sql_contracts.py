@@ -303,6 +303,64 @@ def test_no_trailing_comma_before_closing_parenthesis() -> None:
     assert not offenders, "trailing comma before closing parenthesis:\n" + "\n".join(offenders)
 
 
+def test_values_rows_are_comma_separated_without_a_trailing_comma() -> None:
+    """A FROM VALUES list must separate its rows with commas.
+
+    Both mistakes below break the deployment at compile time with
+    "syntax error unexpected '('" / "unexpected ')'":
+
+        FROM VALUES
+            ('a', 'b')      <- missing separator
+            ('c', 'd')
+
+        FROM VALUES
+            ('a', 'b'),
+            ('c', 'd'),     <- trailing comma
+    """
+    offenders: list[str] = []
+    for path in _sql_files():
+        lines = _read(path).splitlines()
+        in_values = False
+        rows: list[tuple[int, str]] = []
+        index = 0
+        while index < len(lines):
+            stripped = lines[index].strip()
+            if stripped.startswith("--"):
+                index += 1
+                continue
+            if not in_values:
+                if re.search(r"\bFROM\s+VALUES\b", stripped, flags=re.IGNORECASE):
+                    in_values = True
+                    rows = []
+                index += 1
+                continue
+            if stripped.startswith("("):
+                start = index
+                row_text = stripped
+                depth = row_text.count("(") - row_text.count(")")
+                while depth > 0 and index + 1 < len(lines):
+                    index += 1
+                    row_text += " " + lines[index].strip()
+                    depth += lines[index].count("(") - lines[index].count(")")
+                rows.append((start, row_text))
+                index += 1
+                continue
+            if stripped.startswith(")"):
+                for row_index, row in rows[:-1]:
+                    if not row.endswith(","):
+                        offenders.append(
+                            f"{path.relative_to(PROJECT_ROOT)}:{row_index + 1} missing separator"
+                        )
+                if rows and rows[-1][1].endswith(","):
+                    offenders.append(
+                        f"{path.relative_to(PROJECT_ROOT)}:{rows[-1][0] + 1} trailing comma"
+                    )
+                in_values = False
+                rows = []
+            index += 1
+    assert not offenders, "invalid VALUES row lists:\n" + "\n".join(offenders)
+
+
 def _taxonomy_config() -> dict:
     return yaml.safe_load(_read(PROJECT_ROOT / "config" / "taxonomy.yml"))
 
