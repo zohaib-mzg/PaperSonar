@@ -29,35 +29,39 @@ least-privilege grants). Run these once, as `ACCOUNTADMIN` or an equivalent
 administrator, in a Snowflake worksheet:
 
 ```sql
--- Warehouse: small, auto-suspending, short timeout
-CREATE WAREHOUSE IF NOT EXISTS PAPERSONAR_WH
-  WAREHOUSE_SIZE = 'XSMALL'
-  AUTO_SUSPEND = 60
-  AUTO_RESUME = TRUE
-  INITIALLY_SUSPENDED = TRUE
-  STATEMENT_TIMEOUT_IN_SECONDS = 900;
-
--- Role and service user
-CREATE ROLE IF NOT EXISTS PAPERSONAR_INGEST;
-CREATE USER IF NOT EXISTS SVC_PAPERSONAR
-  DEFAULT_ROLE = PAPERSONAR_INGEST
-  DEFAULT_WAREHOUSE = PAPERSONAR_WH
-  MUST_CHANGE_PASSWORD = FALSE;
-GRANT ROLE PAPERSONAR_INGEST TO USER SVC_PAPERSONAR;
-
--- Database and schemas (schemas are also created by migrations, but creating
--- the database and base schemas up front keeps migration grants simple)
+-- Database and the seven approved schemas
 CREATE DATABASE IF NOT EXISTS PAPERSONAR;
-GRANT USAGE ON WAREHOUSE PAPERSONAR_WH TO ROLE PAPERSONAR_INGEST;
-GRANT USAGE ON DATABASE PAPERSONAR TO ROLE PAPERSONAR_INGEST;
-GRANT USAGE, CREATE SCHEMA ON DATABASE PAPERSONAR TO ROLE PAPERSONAR_INGEST;
-GRANT CREATE TABLE, CREATE VIEW, CREATE STAGE, CREATE FILE FORMAT
-  ON SCHEMA PAPERSONAR.INGEST TO ROLE PAPERSONAR_INGEST;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_STAGING;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_BRONZE;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_SILVER;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_DW;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_REPORTING;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_AUDIT;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_REF;
 ```
 
-> The pipeline creates four schemas itself via migrations: `INGEST` is the
-> connection schema; migrations create `PROJECT_OPS` (operational state + raw
-> stage), `PROJECT_STAGING`, `PROJECT_DW`, and `PROJECT_REPORTING`.
+The warehouse, the four roles, the resource monitor, the raw stage and every
+table, view and task are created by the versioned setup scripts in
+`sql/00_setup/` (schemas, roles and grants, warehouse and monitor, stages and
+file formats, audit DDL, reference DDL, reference seeds) followed by the layer
+and task scripts in `sql/01_staging/` through `sql/09_tasks/`. Deploy them in
+that order with `python -m runner.cli deploy --sql-dir sql --yes`, using an
+administrative role; the deployment script refuses `ACCOUNTADMIN` for
+automation and the Snowflake root task is deliberately left suspended.
+
+The Phase 2 objects are:
+
+| Object | Name |
+| --- | --- |
+| Warehouse | `WH_PAPERSONAR_ELT` (XSMALL, auto-suspend 60 s) |
+| Resource monitor | `RM_PAPERSONAR_ELT` |
+| Roles | `PAPERSONAR_ADMIN`, `PAPERSONAR_LOADER`, `PAPERSONAR_TRANSFORMER`, `PAPERSONAR_REPORTER` |
+| Service user | `SVC_PAPERSONAR` (key-pair only, no password) |
+| Schemas | `PROJECT_STAGING`, `PROJECT_BRONZE`, `PROJECT_SILVER`, `PROJECT_DW`, `PROJECT_REPORTING`, `PROJECT_AUDIT`, `PROJECT_REF` |
+
+> The older Phase 1 objects `PAPERSONAR_WH`, `PAPERSONAR_INGEST` and the
+> `INGEST` schema are **not** part of Phase 2. If they exist in the account,
+> they are leftovers and can be dropped after Phase 2 is verified.
 
 ### 1.3 Key-pair authentication (preferred by the official connector)
 
@@ -90,14 +94,19 @@ Add these **repository secrets** (Settings → Secrets and variables → Actions
 | --- | --- |
 | `SNOWFLAKE_ACCOUNT` | e.g. `xy12345.eu-central-1` |
 | `SNOWFLAKE_USER` | `SVC_PAPERSONAR` |
-| `SNOWFLAKE_ROLE` | `PAPERSONAR_INGEST` |
-| `SNOWFLAKE_WAREHOUSE` | `PAPERSONAR_WH` |
+| `SNOWFLAKE_ROLE` | `PAPERSONAR_LOADER` (extraction workflow) |
+| `SNOWFLAKE_WAREHOUSE` | `WH_PAPERSONAR_ELT` |
 | `SNOWFLAKE_DATABASE` | `PAPERSONAR` |
-| `SNOWFLAKE_SCHEMA` | `INGEST` |
+| `SNOWFLAKE_SCHEMA` | `PROJECT_STAGING` |
 | `SNOWFLAKE_PRIVATE_KEY` | full PEM text of `papersonar_key.p8` (single secret, multiline) |
 | `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` | only if the key is encrypted |
 | `OPENALEX_API_KEY` | OpenAlex premium key (needed past the first page) |
 | `CROSSREF_CONTACT_EMAIL` | contact email for the polite Crossref pool |
+
+The deployment workflow reads a separate `SNOWFLAKE_DEPLOY_ROLE` secret, which
+must be an administrative role (`PAPERSONAR_ADMIN`). Keep the two roles
+separate: `PAPERSONAR_LOADER` for extraction, `PAPERSONAR_ADMIN` for
+deployment. Both workflows refuse `ACCOUNTADMIN`.
 
 Never put credentials in repository variables. `.env.example` contains
 placeholders only.

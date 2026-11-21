@@ -24,8 +24,9 @@ activate paid features or upgrades. Nothing in this guide deletes existing data.
                                     →   PROJECT_REPORTING (views)       gate
 ```
 
-You create the account + resources; `papersonar migrate` creates all four
-schemas, tables, views, and the raw-payload stage automatically.
+You create the account + resources; `python -m runner.cli deploy --sql-dir sql
+--yes` creates the seven schemas, tables, views, stages and the task graph
+from the versioned scripts in `sql/`.
 
 ---
 
@@ -59,45 +60,43 @@ Paste **all** of the following and click **Run All** (or press
 
 ```sql
 -- =====================================================================
--- PaperSonar one-time setup — run as ACCOUNTADMIN in one worksheet
+-- PaperSonar Phase 2 one-time setup — run as ACCOUNTADMIN in one worksheet
 -- =====================================================================
 
--- 1) Small, auto-suspending warehouse (cheapest size; suspends after 60 s idle)
-CREATE WAREHOUSE IF NOT EXISTS PAPERSONAR_WH
-  WAREHOUSE_SIZE = 'XSMALL'
-  AUTO_SUSPEND = 60
-  AUTO_RESUME = TRUE
-  INITIALLY_SUSPENDED = TRUE
-  STATEMENT_TIMEOUT_IN_SECONDS = 900;
-
--- 2) Least-privilege role + service user (no password login; key-pair only)
-CREATE ROLE IF NOT EXISTS PAPERSONAR_INGEST;
-
-CREATE USER IF NOT EXISTS SVC_PAPERSONAR
-  DEFAULT_ROLE = PAPERSONAR_INGEST
-  DEFAULT_WAREHOUSE = PAPERSONAR_WH
-  DISPLAY_NAME = 'PaperSonar service user'
-  MUST_CHANGE_PASSWORD = FALSE;
-
-GRANT ROLE PAPERSONAR_INGEST TO USER SVC_PAPERSONAR;
-
--- 3) Database + connection schema
+-- 1) Database + the seven approved schemas
 CREATE DATABASE IF NOT EXISTS PAPERSONAR;
-CREATE SCHEMA IF NOT EXISTS PAPERSONAR.INGEST;
-
--- 4) Grants (minimum the pipeline needs)
-GRANT USAGE ON WAREHOUSE PAPERSONAR_WH TO ROLE PAPERSONAR_INGEST;
-GRANT USAGE ON DATABASE PAPERSONAR TO ROLE PAPERSONAR_INGEST;
-GRANT CREATE SCHEMA ON DATABASE PAPERSONAR TO ROLE PAPERSONAR_INGEST;
-GRANT USAGE ON SCHEMA PAPERSONAR.INGEST TO ROLE PAPERSONAR_INGEST;
-
--- ✅ Expect: 9 × "Statement executed successfully"
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_STAGING;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_BRONZE;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_SILVER;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_DW;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_REPORTING;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_AUDIT;
+CREATE SCHEMA IF NOT EXISTS PAPERSONAR.PROJECT_REF;
 ```
 
-**How this works:** the pipeline role owns everything it creates. When you run
-`papersonar migrate` (Step 6), it creates the four schemas (`PROJECT_OPS`,
-`PROJECT_STAGING`, `PROJECT_DW`, `PROJECT_REPORTING`) and all tables/views
-inside them itself — you never have to create those by hand.
+The warehouse, the four roles, the resource monitor, the raw stage and every
+table, view and task are created by the versioned setup scripts in
+`sql/00_setup/` through `sql/09_tasks/`. Deploy them in file order with:
+
+```powershell
+python -m runner.cli deploy --sql-dir sql --yes
+```
+
+The deployment needs an administrative role (`PAPERSONAR_ADMIN`), not
+`ACCOUNTADMIN`, and it leaves the Snowflake root task suspended on purpose:
+GitHub Actions is the only scheduler.
+
+| Phase 2 object | Name |
+|---|---|
+| Warehouse | `WH_PAPERSONAR_ELT` (XSMALL, auto-suspend 60 s) |
+| Resource monitor | `RM_PAPERSONAR_ELT` |
+| Roles | `PAPERSONAR_ADMIN`, `PAPERSONAR_LOADER`, `PAPERSONAR_TRANSFORMER`, `PAPERSONAR_REPORTER` |
+| Service user | `SVC_PAPERSONAR` (key-pair only, no password) |
+| Schemas | `PROJECT_STAGING`, `PROJECT_BRONZE`, `PROJECT_SILVER`, `PROJECT_DW`, `PROJECT_REPORTING`, `PROJECT_AUDIT`, `PROJECT_REF` |
+
+> The older Phase 1 objects `PAPERSONAR_WH`, `PAPERSONAR_INGEST` and the
+> `INGEST` schema are **not** part of Phase 2. If they exist in the account,
+> they are leftovers and can be dropped after Phase 2 is verified.
 
 ---
 
@@ -169,13 +168,14 @@ Add each secret with **exactly** these names:
 |---:|---|---|
 | 1 | `SNOWFLAKE_ACCOUNT` | account identifier from Step 1, e.g. `XY12345.EU-CENTRAL-1` |
 | 2 | `SNOWFLAKE_USER` | `SVC_PAPERSONAR` |
-| 3 | `SNOWFLAKE_ROLE` | `PAPERSONAR_INGEST` |
-| 4 | `SNOWFLAKE_WAREHOUSE` | `PAPERSONAR_WH` |
+| 3 | `SNOWFLAKE_ROLE` | `PAPERSONAR_LOADER` (extraction workflow) |
+| 4 | `SNOWFLAKE_WAREHOUSE` | `WH_PAPERSONAR_ELT` |
 | 5 | `SNOWFLAKE_DATABASE` | `PAPERSONAR` |
-| 6 | `SNOWFLAKE_SCHEMA` | `INGEST` |
+| 6 | `SNOWFLAKE_SCHEMA` | `PROJECT_STAGING` |
 | 7 | `SNOWFLAKE_PRIVATE_KEY` | open `papersonar_key.p8` in a text editor, copy **the entire file** including the `-----BEGIN PRIVATE KEY-----` and `-----END PRIVATE KEY-----` lines (multiline paste is fine) |
 | 8 | `OPENALEX_API_KEY` | free OpenAlex premium key: <https://openalex.org/users/me> → "Get a key" (needed past the first page of results) |
 | 9 | `CROSSREF_CONTACT_EMAIL` | your email for the Crossref polite pool (e.g. `you@example.com`) |
+| 10 | `SNOWFLAKE_DEPLOY_ROLE` | `PAPERSONAR_ADMIN` — used only by the deployment workflow |
 
 Optional: `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` — only if you generated an
 **encrypted** key (we used `-nocrypt`, so normally not needed).
@@ -196,10 +196,10 @@ cd D:\PaperSonar
 $env:PAPERSONAR_TARGET = "snowflake"
 $env:SNOWFLAKE_ACCOUNT   = "XY12345.EU-CENTRAL-1"     # your account identifier
 $env:SNOWFLAKE_USER      = "SVC_PAPERSONAR"
-$env:SNOWFLAKE_ROLE      = "PAPERSONAR_INGEST"
-$env:SNOWFLAKE_WAREHOUSE = "PAPERSONAR_WH"
+$env:SNOWFLAKE_ROLE      = "PAPERSONAR_LOADER"
+$env:SNOWFLAKE_WAREHOUSE = "WH_PAPERSONAR_ELT"
 $env:SNOWFLAKE_DATABASE  = "PAPERSONAR"
-$env:SNOWFLAKE_SCHEMA    = "INGEST"
+$env:SNOWFLAKE_SCHEMA    = "PROJECT_STAGING"
 $env:SNOWFLAKE_PRIVATE_KEY = Get-Content -Raw "$HOME\.papersonar\papersonar_key.p8"
 $env:OPENALEX_API_KEY      = "<your OpenAlex key>"
 $env:CROSSREF_CONTACT_EMAIL = "<your email>"
@@ -208,34 +208,31 @@ $env:CROSSREF_CONTACT_EMAIL = "<your email>"
 Then run the pipeline in this exact order:
 
 ```powershell
-# 1. Configuration check (should print: configuration OK for ingestion)
-.venv\Scripts\papersonar.exe validate-config --mode ingest
+# 1. Configuration check (validates sources, taxonomy and DQ configuration)
+python -m runner.cli check
 
-# 2. Create all schemas/tables/views in Snowflake (001, 002, 003)
-.venv\Scripts\papersonar.exe migrate
+# 2. Deploy the SQL layers and the task graph (needs PAPERSONAR_ADMIN)
+python -m runner.cli deploy --sql-dir sql --yes
 
-# 3. Live connectivity + permissions smoke test + row counts
-.venv\Scripts\papersonar.exe smoke-test
+# 3. Extract one source window and load it into Snowflake
+python -m runner.cli extract --source crossref --mode incremental --no-task
 
-# 4. See what the next sync would fetch (plans only — no fetch, no writes)
-.venv\Scripts\papersonar.exe sync --dry-run
+# 4. Drain the Snowflake task graph (one root per LOADED batch)
+python -m runner.cli trigger --drain
 
-# 5. First real run (bounded incremental sync)
-.venv\Scripts\papersonar.exe sync
-
-# 6. Data-quality gate
-.venv\Scripts\papersonar.exe quality
+# 5. Show batch status and per-source totals
+python -m runner.cli report
 ```
 
 **What to expect:**
 
 | Command | Success looks like |
 |---|---|
-| `validate-config --mode ingest` | `configuration OK for ingestion (Snowflake settings present)` |
-| `migrate` | `migrations applied: 001, 002, 003` |
-| `smoke-test` | `connected to database=PAPERSONAR ...` + row counts (all `0` on a fresh account) |
-| `sync --dry-run` | one line per source window, e.g. `source crossref: sync window indexdate:...` |
-| `sync` | `status=succeeded` (or `partial` if a source is throttled — safe to re-run) + counters + `quality_gate=PASS` |
+| `check` | `configuration OK` with no missing key reported |
+| `deploy` | one line per SQL file, ending with the task graph prepared |
+| `extract` | a new `BATCH_*` id in `LOADED` state with its manifest registered |
+| `trigger --drain` | batches end in `PUBLISHED` (or `FAILED` with a recorded DQ reason) |
+| `report` | one row per source with batch counts and record totals |
 
 Exit codes: `0` succeeded · `1` partial · `2` error. Re-running `sync` is
 always safe (idempotent upserts).
@@ -253,45 +250,54 @@ complete. Never runs on a schedule by accident.
 
 ## STEP 7 — Verify in Snowsight that data actually landed
 
-New worksheet (**use role PAPERSONAR_INGEST**):
+New worksheet (**use role PAPERSONAR_ADMIN**):
 
 ```sql
-USE ROLE PAPERSONAR_INGEST;
+USE ROLE PAPERSONAR_ADMIN;
 USE DATABASE PAPERSONAR;
 
--- Recent runs: status + counters (partial/failed also recorded, never hidden)
-SELECT RUN_ID, MODE, STATUS, SOURCE_STATUSES, RAW_ROWS, STAGING_ROWS,
-       QUARANTINED_ROWS, WAREHOUSE_ROWS, QUALITY_GATE_RESULT, STARTED_AT
-FROM PROJECT_OPS.ETL_RUN ORDER BY STARTED_AT DESC LIMIT 5;
+-- Batch lifecycle: the published batches are the visible contract
+SELECT BATCH_ID, SOURCE_NAME, EXTRACTION_MODE, STATUS, FILE_COUNT, RECORD_COUNT,
+       CREATED_AT, FINISHED_AT
+FROM PROJECT_AUDIT.BATCH ORDER BY CREATED_AT DESC LIMIT 10;
 
--- Canonical works loaded
-SELECT COUNT(*) AS WORKS FROM PROJECT_DW.DIM_WORK;
+-- Publication registry (one row per published batch, zero critical DQ failures)
+SELECT BATCH_ID, PUBLISHED_AT, PUBLISHED_BY, DQ_SUMMARY, IS_CAPPED
+FROM PROJECT_AUDIT.PUBLISHED_BATCH ORDER BY PUBLISHED_AT DESC;
 
--- Per-source checkpoints (watermarks)
-SELECT SOURCE_NAME, STREAM_NAME, STATUS, LAST_SUCCESSFUL_WATERMARK, LAST_SUCCESS_AT
-FROM PROJECT_OPS.SOURCE_SYNC_STATE ORDER BY SOURCE_NAME;
+-- Canonical outputs in the star schema
+SELECT COUNT(*) AS RESEARCH_OUTPUTS FROM PROJECT_DW.FACT_RESEARCH_OUTPUT;
 
--- Quarantine review queue (should typically be small / zero)
-SELECT REASON_CODE, COUNT(*) FROM PROJECT_STAGING.STG_QUARANTINE
-WHERE RESOLUTION_STATUS = 'open' GROUP BY REASON_CODE;
+-- DQ gate evidence: critical failures must be zero for every published batch
+SELECT BATCH_ID,
+       COUNT_IF(SEVERITY = 'CRITICAL' AND STATUS = 'FAIL') AS CRITICAL_FAILURES,
+       COUNT_IF(SEVERITY = 'WARNING' AND STATUS = 'FAIL') AS WARNING_FAILURES
+FROM PROJECT_AUDIT.DQ_RESULT GROUP BY BATCH_ID ORDER BY BATCH_ID;
 
--- Try a reporting view (empty until sync lands data, then populated)
-SELECT * FROM PROJECT_REPORTING.VW_PUBLICATION_BY_YEAR ORDER BY PUB_YEAR;
+-- Quarantine review queue (malformed records stay visible, never dropped)
+SELECT SOURCE_NAME, REASON_CODE, COUNT(*) AS RECORDS
+FROM PROJECT_AUDIT.QUARANTINE_RECORD GROUP BY 1, 2 ORDER BY RECORDS DESC;
+
+-- Try a reporting view (populated only for published batches)
+SELECT * FROM PROJECT_REPORTING.VW_RESEARCH_OUTPUT LIMIT 10;
 ```
+
+The full read-only audit pack is `sql/99_tests/02_phase2_verification.sql`
+(sections A–H).
 
 ---
 
 ## STEP 8 — Run it via GitHub Actions
 
-1. Repo → **Actions** → **phase2-pipeline**.
-2. First run **validate** (no ingestion): click **Run workflow** → mode
-   `validate` → **Run**. Expect green: tests → secret check → smoke test →
-   quality gate.
-3. Then **sync**: Run workflow → mode `sync`. Expect a job summary with
-   `outcome=succeeded` (or `partial` — check per-source statuses in the log).
-4. Scheduled incremental sync runs **daily at 04:30 UTC** automatically
-   (`schedule` trigger). Backfill is **dispatch-only** and never runs on the
-   schedule.
+1. Repo → **Actions** → **deploy-ci**: runs lint, tests and deploys the SQL
+   layers and task graph. Run it once after any change under `sql/`.
+2. Repo → **Actions** → **extract-load**: extracts the source windows, uploads
+   the raw shards and drains the Snowflake task graph. Use **Run workflow** →
+   source `all` (or one source) → mode `incremental`.
+3. The scheduled run fires **daily at 01:00 UTC**. The Snowflake root task has
+   no cron of its own and is only ever started with `EXECUTE TASK` by the
+   workflow. Backfill (`mode = full`) is **dispatch-only** and never runs on
+   the schedule.
 
 ---
 
@@ -301,20 +307,22 @@ SELECT * FROM PROJECT_REPORTING.VW_PUBLICATION_BY_YEAR ORDER BY PUB_YEAR;
 |---|---|
 | `Could not load SNOWFLAKE_PRIVATE_KEY (wrong passphrase or malformed key)` | The `.p8` content got truncated or you used the wrong key. Re-copy the whole file into the env var / secret; if encrypted, set `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE`. |
 | `Failed to connect ... 250001` / auth error | `RSA_PUBLIC_KEY` mismatch. You probably pasted the fingerprint or missed characters. Redo Step 3–4 (key body = one unbroken base64 string). |
-| `... does not exist or not authorized` on tables | Role/grant missing → re-run the Step 2 grant block, confirm role `PAPERSONAR_INGEST` and warehouse grants. |
+| `... does not exist or not authorized` on tables | Role/grant missing → redeploy `sql/00_setup/01_roles_and_grants.sql` with an administrative role and confirm role `PAPERSONAR_LOADER` (extraction) or `PAPERSONAR_ADMIN` (deployment) plus the `WH_PAPERSONAR_ELT` warehouse grant. |
 | Account identifier rejected | Some accounts need the `ORGNAME-ACCOUNTNAME` form — copy the identifier exactly as shown bottom-left in Snowsight. |
-| `sync` returns `partial` | One source hit rate limits or an incomplete window. Nothing is lost — re-run `sync`; it resumes from the saved cursor. Check per-source statuses printed after `status=`. |
+| Workflow fails with `Refusing to run extraction with ACCOUNTADMIN` | `SNOWFLAKE_ROLE` is set to `ACCOUNTADMIN`. Use `PAPERSONAR_LOADER` for `extract-load` and `PAPERSONAR_ADMIN` for `deploy-ci`. |
+| Batch stays `FAILED` with `Publication blocked by N critical DQ failure(s)` | The gate is working as designed. Read the failing rule in `PROJECT_AUDIT.DQ_RESULT` for that batch id, fix the cause, then requeue: `python -m runner.cli trigger --retry-batch-id <BATCH_ID> --drain`. |
 | `HTTP 429` in logs | Source throttling; the client honors `Retry-After` with capped backoff. If attempts exhaust, the source is marked failed for that run. |
-| Everything `0 rows` after sync | Check `ETL_RUN.STATUS` and `SOURCE_STATUSES` (Step 7 query); a failed source leaves its watermark untouched — fix and re-run. |
+| Everything `0 rows` after extract | Check `PROJECT_AUDIT.BATCH.STATUS` (Step 7 query); a failed source leaves its watermark untouched — fix and re-run. |
 | Trial expired | Stop and report **BLOCKED**; do not upgrade; do not switch databases. |
 
 ---
 
 ## Cost-safety checklist (confirm once)
 
-- [ ] Warehouse `PAPERSONAR_WH` is `XSMALL`, `AUTO_SUSPEND = 60`, `INITIALLY_SUSPENDED = TRUE`
+- [ ] Warehouse `WH_PAPERSONAR_ELT` is `XSMALL`, `AUTO_SUSPEND = 60`, `INITIALLY_SUSPENDED = TRUE`
 - [ ] `STATEMENT_TIMEOUT_IN_SECONDS = 900` set (Step 2 SQL includes it)
-- [ ] Only one warehouse created; no new warehouses/roles/DBs beyond the guide
+- [ ] Resource monitor `RM_PAPERSONAR_ELT` exists
+- [ ] Only the four `PAPERSONAR_*` roles exist; no extra warehouses/roles/DBs
 - [ ] Service user has key-pair auth only (no password)
 - [ ] Scheduled workflow = `sync` only; backfill only via manual dispatch
 - [ ] You know where to check credit usage: Snowsight → Admin → **Cost Management → Consumption**

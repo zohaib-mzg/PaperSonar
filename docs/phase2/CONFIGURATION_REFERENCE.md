@@ -26,16 +26,17 @@ fail closed when mandatory Snowflake settings are missing or when
 | --- | --- |
 | `SNOWFLAKE_ACCOUNT` | e.g. `xy12345.eu-central-1` |
 | `SNOWFLAKE_USER` | Service user, e.g. `SVC_PAPERSONAR` |
-| `SNOWFLAKE_ROLE` | Least-privilege role, e.g. `PAPERSONAR_INGEST` |
-| `SNOWFLAKE_WAREHOUSE` | e.g. `PAPERSONAR_WH` |
+| `SNOWFLAKE_ROLE` | Least-privilege role: `PAPERSONAR_LOADER` for extraction, `PAPERSONAR_ADMIN` for deployment |
+| `SNOWFLAKE_WAREHOUSE` | `WH_PAPERSONAR_ELT` |
 | `SNOWFLAKE_DATABASE` | e.g. `PAPERSONAR` |
-| `SNOWFLAKE_SCHEMA` | Connection schema, e.g. `INGEST` |
+| `SNOWFLAKE_SCHEMA` | Connection schema, e.g. `PROJECT_STAGING` |
 | `SNOWFLAKE_PRIVATE_KEY` | Either inline PEM content (`-----BEGIN PRIVATE KEY-----...`) or a path to the `.p8` key file. Both forms are accepted; the value is never logged. |
 | `SNOWFLAKE_PRIVATE_KEY_PASSPHRASE` | Only when the private key is encrypted. Treated as a secret. |
+| `SNOWFLAKE_DEPLOY_ROLE` | Deployment workflow only: `PAPERSONAR_ADMIN`. Never `ACCOUNTADMIN`. |
 
-`papersonar validate-config --mode ingest` verifies all of the above (and that
-the key material is resolvable) before any source call, exiting `2` with the
-missing setting **names** only.
+`python -m runner.cli check` verifies all of the above (and that the key
+material is resolvable) before any source call, exiting `2` with the missing
+setting **names** only.
 
 ## 3. Per-source settings
 

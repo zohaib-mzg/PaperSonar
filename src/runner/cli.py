@@ -236,8 +236,27 @@ def _trigger(args: argparse.Namespace) -> int:
                 return 1
             print(f"requeued FAILED batch: {args.retry_batch_id}")
         if args.drain:
+            pending_before = {
+                row["BATCH_ID"]
+                for row in client.batch_statuses()
+                if row["STATUS"] in ("LOADED", "PROCESSING")
+            }
             rounds = client.drain_batches()
             print(f"drained pending batches in {rounds} trigger round(s)")
+            failed = [
+                row
+                for row in client.batch_statuses()
+                if row["BATCH_ID"] in pending_before and row["STATUS"] == "FAILED"
+            ]
+            if failed:
+                for row in failed:
+                    print(
+                        f"batch failed during drain: {row['BATCH_ID']} "
+                        f"source={row['SOURCE_NAME']} "
+                        f"error={row['ERROR_SUMMARY'] or 'unknown'}"
+                    )
+                print(f"{len(failed)} batch(es) failed during this drain")
+                return 1
         elif not args.retry_batch_id:
             client.execute_root_task()
             print("triggered PAPERSONAR.PROJECT_AUDIT.TASK_ELT_ROOT")

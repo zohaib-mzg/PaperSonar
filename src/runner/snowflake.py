@@ -505,7 +505,7 @@ class SnowflakeClient:
         """Return the current audit state of every recent batch."""
         rows = self.execute(
             "SELECT BATCH_ID, SOURCE_NAME, STATUS, FILE_COUNT, RECORD_COUNT, "
-            "IS_CAPPED, TO_VARCHAR(UPDATED_AT) "
+            "IS_CAPPED, TO_VARCHAR(UPDATED_AT), ERROR_SUMMARY "
             "FROM PROJECT_AUDIT.BATCH ORDER BY CREATED_AT, BATCH_ID"
         )
         return [
@@ -517,6 +517,7 @@ class SnowflakeClient:
                 "RECORD_COUNT": int(row[4] or 0),
                 "IS_CAPPED": bool(row[5]),
                 "UPDATED_AT": row[6],
+                "ERROR_SUMMARY": row[7],
             }
             for row in rows
         ]
