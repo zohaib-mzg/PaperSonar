@@ -213,6 +213,9 @@ BEGIN
     UNION ALL
 
     -- DQ-004: duplicate canonical fact grain ---------------------------------
+    -- The fact table is a single current-state table, so the fact duplicate
+    -- check is global. The category bridge is rebuilt one batch at a time, so
+    -- its duplicate check is scoped to the rows this batch wrote.
     SELECT
       'DQ-004',
       'DW',
@@ -225,9 +228,10 @@ BEGIN
       GROUP BY OUTPUT_SK
       HAVING COUNT(*) > 1
       UNION ALL
-      SELECT OUTPUT_SK
-      FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY
-      GROUP BY OUTPUT_SK, CATEGORY_KEY
+      SELECT bridge.OUTPUT_SK
+      FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY bridge
+      WHERE bridge.BATCH_ID = :batch_id
+      GROUP BY bridge.OUTPUT_SK, bridge.CATEGORY_KEY
       HAVING COUNT(*) > 1
     ) duplicates
 
