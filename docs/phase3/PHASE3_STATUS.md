@@ -103,13 +103,41 @@ Supporting documents in `docs/phase3/`: `PHASE3_PLAN.md`, `METRIC_CATALOGUE.md`,
 
 ## 5. Open items
 
-1. **Confirm the widened columns live.** The DataCite failures were caused by
-   two truncating columns; `sql/03_silver/04_widen_oversize_text.sql` widens
-   them, and the check below confirms it on the account.
-2. **Merge.** Merge `phase3` into `main` and run the deployment workflow
-   against `main` so that the delivered branch is the deployed branch.
+1. **Confirm the deployment run on `main`.** The merge of `phase3` into `main`
+   pushed `sql/**` and `config/**` and therefore triggered the deployment
+   workflow automatically. The run re-applies the idempotent DDL, including
+   `sql/03_silver/04_widen_oversize_text.sql`. Nothing else is outstanding.
 
-## 6. How to verify the current state
+**The widened columns were verified live on 2026-11-22:**
+
+| Column | Live width |
+|---|---:|
+| `PROJECT_DW.DIMENSION_KEY_MAP.BUSINESS_KEY` | 1000 |
+| `PROJECT_DW.DIM_TOPIC.TOPIC_NAME` | 4000 |
+| `PROJECT_SILVER.SLV_SOURCE_OBSERVATION.PUBLICATION_DATE_RAW` | 4000 |
+| `PROJECT_STAGING.STG_DIM_TOPIC.TOPIC_KEY` | 1000 |
+| `PROJECT_STAGING.STG_DIM_TOPIC.TOPIC_NAME` | 4000 |
+
+So the two truncating columns that failed the three DataCite batches are wide
+on the account, and the DataCite path is no longer blocked by the project code.
+
+## 6. Final state
+
+- Every Phase 3 work package is delivered and evidenced, and every row of
+  `docs/requirements/course-requirements-matrix.md` for Phase 3 is validated.
+- The five published batches, the 296,299-output corpus, the 74.40% topic
+  coverage, the five secure reporting views, the fourteen query exports, the
+  three OLAP exports and the before/after optimization measurement are all
+  committed under `docs/phase3/evidence/`.
+- The account is closed down for the remaining trial time: one X-Small
+  warehouse in use, both leftovers suspended, the resource monitor attached,
+  the abandoned batch closed, the service user on least-privilege defaults.
+- `phase3` was merged into `main` (fast-forward, 31 commits) so that the
+  delivered branch is the deployed branch. `main` and `phase3` point at the
+  same commit.
+
+
+## 7. How to verify the current state
 
 ```sql
 USE ROLE PAPERSONAR_ADMIN;

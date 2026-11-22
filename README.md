@@ -1,157 +1,281 @@
 <p align="center"><img src="docs/assets/papersonar-banner.svg" alt="PaperSonar research intelligence" width="100%"></p>
 
+<p align="center">
+  <b>Research & Innovation Intelligence Warehouse</b><br>
+  <sub>Snowflake · strict ELT · five scholarly sources · reproducible analytics</sub>
+</p>
+
+<p align="center">
+  <img alt="Phase 1 delivered" src="https://img.shields.io/badge/Phase%201-delivered-2ea44f"> 
+  <img alt="Phase 2 delivered" src="https://img.shields.io/badge/Phase%202-delivered-2ea44f"> 
+  <img alt="Phase 3 delivered" src="https://img.shields.io/badge/Phase%203-delivered-2ea44f">
+  <img alt="Live on Snowflake" src="https://img.shields.io/badge/live-Snowflake%20trial-0b7285">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-270%20passing-2ea44f">
+</p>
+
+---
+
 # PaperSonar
 
-**Research & Innovation Intelligence Warehouse**
+PaperSonar is a research-intelligence warehouse that connects scholarly
+publications, preprints, datasets, research software, authors and creators,
+institutions, venues, citations and related-output relationships. It exists to
+answer one question honestly: **which research directions are worth attention,
+and what evidence supports that claim?**
 
-PaperSonar is a design-stage research intelligence platform that connects scholarly publications, preprints, datasets, research software, authors/creators, institutions, citations and related-output relationships. It is designed to help users compare research directions using transparent counts, dated observations, source provenance and supporting evidence.
+Every number in this repository is reproducible from committed SQL against a
+live Snowflake account, and every number carries its denominator, its source
+provenance and the evidence file that backs it. Where the data cannot support
+a conclusion, the project says so instead of publishing one.
 
-> **Project state:** Phase 2 strict-ELT implementation is complete at repository level against the Nov 18 specification pack. Python extracts and uploads raw gzip NDJSON only; Snowflake performs staging, bronze, silver identity resolution, categorization, dimensional loads, DQ gating and publication. **Live acceptance is PARTIAL:** the OpenAlex full backfill (2026-11-17..18) reached `PUBLISHED` with 168,725 records; see [live evidence](docs/phase2/evidence/2026-11-19-openalex-full-load.md). OpenAlex incremental remains blocked by the Member+/Partner daily-sync plan. Phase 3 analytics/BI has not started. See the [implementation status](docs/phase2/IMPLEMENTATION_STATUS.md).
+## At a glance
 
-## The problem PaperSonar addresses
+| | |
+|---|---|
+| Canonical research outputs | **296,299** across 5 published batches, 0 duplicate DOIs |
+| Topic coverage | **74.40%** of outputs classified (1.92% before the Phase 3 taxonomy) |
+| Taxonomy | 67 categories in 10 domains, 63 populated, one row per output and category |
+| Relationship edges | 2,557,842 reference edges, 94,912 induced inside the corpus |
+| Analytical questions | 14, every one executed live and exported as evidence |
+| OLAP | `ROLLUP`, `CUBE` and `GROUPING SETS` with `GROUPING_ID` subtotal flags |
+| Reporting layer | 5 `SECURE` views granted to a dedicated reporter role |
+| Optimization | 4 statements measured before and after; clustering rejected and rolled back |
+| Quality gate | 12 DQ rules, fail-closed publication, per-batch results |
+| Automated tests | 270 passing, ruff clean, SQL parsed and contract-checked |
 
-Researchers can find individual papers and datasets, but comparing possible research directions consistently is harder. PaperSonar proposes a reproducible warehouse that compares publication and artifact activity, citation context, topic intersections, creator/institution participation, open-access status, and links between papers, datasets and software. A sparse intersection is a review signal, never proof of novelty.
+## The problem
 
-## Broader product scope
+A researcher can find any single paper. Comparing *possible* research
+directions is much harder, because the evidence lives in five different
+metadata services that disagree about subjects, dates, identifiers and
+versions, and because every "trending topic" claim is really a claim about a
+counting rule. PaperSonar turns those five services into one versioned,
+source-provenanced output graph, and then applies explicit, published rules
+for counting, coverage and suppression to every question it answers.
 
-The target is a source-neutral research-output graph and dimensional analytics mart. It can represent:
+A sparse intersection is a signal worth watching, never proof of novelty.
 
-- Journal and conference publications indexed in scholarly metadata services.
-- Preprints and version histories.
-- Research datasets and research software with persistent identifiers.
-- Research reports and related scholarly outputs.
-- Authors/creators, institutions, venues/repositories, topics, funders, access status and typed output relationships.
-- Citations and related-output links where a source supplies them.
+## The live corpus
 
-The first bounded corpus remains software engineering and adjacent computing topics. Broader resource types add scale and context without silently claiming coverage of all science. Corpus boundaries must be measured and versioned.
+| Source | Batch | Published records | Topic coverage |
+|---|---|---:|---:|
+| OpenAlex | `BATCH_07D9668D4CBED88D815D30CA` | 168,725 | 98.30% |
+| Crossref (small) | `BATCH_B51983B70B26023F22201AE2` | 18,495 | 35.30% |
+| Crossref (DAB) | `BATCH_DAB12A7209208BE375D89C0B` | 60,000 | 35.30% |
+| arXiv | `BATCH_3DF8101D66B0797A217FD877` | 15,505 | 100.00% |
+| Zenodo | `BATCH_A75F9C61B9BF73B40CBC8C54` | 33,741 | 34.33% |
 
-## Five-source plan
+296,299 canonical outputs, 220,501 classified, 75,798 unclassified, 265,968
+citation observations, 101,257 outputs with a resolved institution.
 
-| Priority | Source | Main value | Incremental design |
-|---:|---|---|---|
-| 1 | [OpenAlex](https://api.openalex.org/) | Scholarly graph: works, authors, institutions, topics, sources and citation metadata | One-time full backfill; incremental uses `from_updated_date` (Member+/Partner daily sync required; no publication-date fallback) |
-| 2 | [Crossref](https://api.crossref.org/) | DOI bibliographic metadata and reindex changes | Fixed `from-index-date` / `until-index-date` windows with cursor paging and overlap |
-| 3 | [arXiv](https://export.arxiv.org/api/query) | Computing preprints, categories, abstracts and versions | OAI-PMH datestamp windows; preserve version observations |
-| 4 | [DataCite](https://api.datacite.org/) | Datasets, software and other registered research outputs | Public API updated-date query or OAI-PMH; validate update semantics |
-| 5 | [Zenodo](https://zenodo.org/api/) | Datasets, software, reports, versions and related identifiers | OAI-PMH datestamp windows, with API detail/backfill |
+**The corpus is bimodal in time.** 78,226 institution-linked outputs are
+stamped 2026 (the current extraction windows), a long tail sits before 2009,
+and the 2021–2025 window that most topic questions need holds only a few
+thousand works. Every year-scoped result therefore prints its denominator
+next to its ratio, and every growth ranking is suppressed when either endpoint
+has fewer than 30 works.
 
-Do not add more sources until these five connectors have been individually tested. See [source strategy](docs/sources.md) for identities, API limitations, update windows, provenance, overlap and recovery rules.
-
-## Target architecture
+## Architecture
 
 ![PaperSonar target architecture](docs/architecture/diagrams/07_Target_architecture_v2.png)
 
 [PNG](docs/architecture/diagrams/07_Target_architecture_v2.png) · [PDF](docs/architecture/diagrams/07_Target_architecture_v2.pdf) · [SVG](docs/architecture/diagrams/07_Target_architecture_v2.svg) · [Architecture notes and logical model](docs/architecture/README.md)
 
-Core layers: five public sources → deterministic extraction/upload → raw gzip NDJSON in the internal stage and batch manifest → Snowflake `PROJECT_STAGING` COPY → current-state `PROJECT_BRONZE` observations (one row per source record id) → `PROJECT_SILVER` typed observations, quarantine and identity crosswalk → `PROJECT_DW` conformed dimensions, facts and bridges → `PROJECT_REPORTING` publication-filtered secure views. `PROJECT_AUDIT` holds lifecycle, DQ, lineage and watermark evidence; `PROJECT_REF` holds versioned taxonomy, expected-key and rule contracts.
+```
+five public sources
+  → deterministic extraction (Python) → raw gzip NDJSON → internal stage + manifest
+  → PROJECT_STAGING (COPY)      → PROJECT_BRONZE  (one row per source record id)
+  → PROJECT_SILVER (typed observations, quarantine, identity crosswalk)
+  → PROJECT_DW   (dimensions, facts, bridges, conformed keys)
+  → PROJECT_REPORTING (publication-filtered SECURE views)
+  → PROJECT_AUDIT (lifecycle, DQ, lineage) · PROJECT_REF (versioned taxonomy and rule contracts)
+```
 
-## Incremental loading and publication are implemented in SQL
+Python extracts and uploads raw gzip NDJSON only. Every transformation,
+deduplication, identity resolution, category scoring, surrogate-key
+assignment, quality gate and publication decision runs in Snowflake SQL. The
+batch lifecycle is `EXTRACTING → LOADED → PROCESSING → PUBLISHED / FAILED`,
+and watermarks advance only after a batch passes the gate.
 
-A deterministic batch ID fixes each source window. Python writes one or more gzip NDJSON shards, uploads them, verifies staged size, registers the manifest, marks the batch `LOADED`, and triggers the Snowflake task graph. The lifecycle is `EXTRACTING → LOADED → PROCESSING → PUBLISHED / FAILED`.
+## Five-source strategy
 
-All transformations, deduplication, identity resolution, category scoring, surrogate-key assignment and quality gating run in Snowflake SQL. Bronze preserves every raw observation version. Watermarks advance only after a batch passes the DQ gate and is published. Missing records are never treated as deletions. See [staging/bronze](docs/phase2/spec/06_STAGING_BRONZE.md), [silver](docs/phase2/spec/07_SILVER.md), and [DQ/reconciliation](docs/phase2/spec/11_DATA_QUALITY_RECONCILIATION.md).
+| Priority | Source | Main value | Incremental design |
+|---:|---|---|---|
+| 1 | [OpenAlex](https://api.openalex.org/) | Scholarly graph: works, authors, institutions, topics, sources, citation metadata | One-time full backfill; incremental uses `from_updated_date` (Member+/Partner daily sync required) |
+| 2 | [Crossref](https://api.crossref.org/) | DOI bibliographic metadata and reindex changes | Fixed `from-index-date` / `until-index-date` windows with cursor paging and overlap |
+| 3 | [arXiv](https://export.arxiv.org/api/query) | Computing preprints, categories, abstracts, versions | OAI-PMH datestamp windows; preserve version observations |
+| 4 | [DataCite](https://api.datacite.org/) | Datasets, software and other registered research outputs | Public API updated-date query or OAI-PMH; validate update semantics |
+| 5 | [Zenodo](https://zenodo.org/api/) | Datasets, software, reports, versions, related identifiers | OAI-PMH datestamp windows with API detail/backfill |
 
-## Platform strategy and Snowflake (Phase 2 decision)
+Do not add more sources until these five connectors have been individually
+tested. Identities, API limits, update windows, provenance, overlap and
+recovery rules: [source strategy](docs/sources.md) and the
+[source capability matrix](docs/phase2/SOURCE_CAPABILITY_MATRIX.md).
 
-Phase 2 has one production target: **Snowflake**, accessed with key-pair
-authentication through the official Python connector. There is no PostgreSQL,
-SQLite, or local-database fallback for ingestion; deterministic tests use a
-mocked Snowflake adapter purely as a testing technique. Production runs must
-use a currently available **no-cost** Snowflake trial/credits offer — Snowflake
-is not guaranteed to be permanently free, paid resources are never activated,
-and if no no-cost offer is available, live deployment stops and is reported as
-**BLOCKED** (never switched to another database). Setup and operating
-instructions: [Phase 2 runbook](docs/phase2/RUNBOOK.md). Historical Phase 1
-free-first analysis: [platform decision](docs/decisions/002-free-first-warehouse-and-snowflake.md).
+## What Phase 3 delivered
 
-## Current dataset and scale
+| Work package | Deliverable | Evidence |
+|---|---|---|
+| WP1 — taxonomy | 67-category contract, reproducible categorization, one row per output and category, DQ-009 before/after | [`evidence/00_taxonomy/`](docs/phase3/evidence/00_taxonomy/WP1_TAXONOMY_EVIDENCE.md) · [runbook](docs/phase3/WP1_TAXONOMY_RUNBOOK.md) |
+| WP2 — 14 questions | Q01–Q14 with explicit denominators, coverage and suppression rules | [`evidence/01_queries/`](docs/phase3/METRIC_CATALOGUE.md) · [catalogue](docs/phase3/METRIC_CATALOGUE.md) |
+| WP3 — OLAP | `ROLLUP`, `CUBE`, `GROUPING SETS` with subtotal flags | [notes](docs/phase3/OLAP_NOTES.md) · [`evidence/02_olap/`](docs/phase3/evidence/02_olap/OLP1_rollup_category_year.csv) |
+| WP4 — reporting views | 5 `SECURE` views granted to `PAPERSONAR_REPORTER` | [`sql/07_reporting/04_phase3_reporting_views.sql`](sql/07_reporting/04_phase3_reporting_views.sql) |
+| WP5 — optimization | 4 statements measured before/after; clustering rejected, rolled back, negative result published | [report](docs/phase3/OPTIMIZATION_REPORT.md) · [`evidence/03_optimization/`](docs/phase3/evidence/03_optimization/BENCH_TIMINGS.csv) |
+| WP6 — Power BI | Three-page specification with visuals, DAX measures and caveats | [spec](docs/phase3/POWERBI_SPEC.md) |
+| WP7 — insights | Report, 5-page PDF, 8-slide deck, seven traceable findings | [report](docs/phase3/INSIGHTS_REPORT.md) · [PDF](docs/phase3/INSIGHTS_REPORT.pdf) · [deck](docs/phase3/INSIGHTS_DECK.pptx) |
 
-- Existing source pilot: 20 actual OpenAlex publication records plus a topic response, one Crossref DOI response, CSV sample and retrieval manifest.
-- Initial historical baseline proposal: 2016–2025; 2026 is a partial period and must use common-cutoff comparisons.
-- Candidate OpenAlex topics: `T10743`, `T12423`, `T12479`. These are not yet finalized.
-- Proposed target: 30,000–60,000 canonical research outputs, subject to source profiling, inclusion rules, free API limits and measured storage. This is a target, not a confirmed count or arbitrary truncation cap.
-- The five sources overlap. Do not add raw source result counts together and call them unique outputs.
+## Findings worth reading before the numbers
 
-## Warehouse model direction
+1. **Coverage is a source property, not a contract property.** The v3
+   taxonomy moved OpenAlex from 3.40% to 98.30% and arXiv to 100%, while
+   Crossref reached 35.30% — because those Crossref records carry no subject
+   field at all (49,093 records, 0 subjects). The honest ceiling is a source
+   limit, and the report says so.
+2. **Growth questions cannot be answered yet.** 389 works in 2023 and 1,053 in
+   2025 make every ratio unstable, so the Phase 1 suppression rule is kept
+   and the conclusion is "not yet reportable".
+3. **The counting rule decides the leaderboard.** Under fractional allocation
+   ecology overtakes botany and ai-ml falls from 4th to 11th. Both counts are
+   published so the reader can see which rule produced which ranking.
+4. **One identifier dominates the institution metric.** A single OpenAlex
+   institution id holds 49,203 works — 56.9% of all institutional credit — and
+   makes the physics-2026 top-5 concentration of 99.24% an artifact of the
+   source metadata, not a statement about physics.
+5. **Only three topic pairs are reportable** (ai-ml×health-sciences 10 joint
+   works, health-sciences×law 9, ai-ml×physics 9). On a young taxonomy, a
+   short pair list is the correct answer.
+6. **Open access is 90.42% of known-status outputs**, with 39,183 outputs of
+   unknown status reported separately rather than folded into either number.
 
-The Phase 2 mart implements canonical research outputs, source observations,
-identity crosswalks, citation snapshots, author/institution/topic/category
-bridges, and typed output relations. `DIM_AUTHOR` is SCD2; all other dimensions
-are Type 1 with stable surrogate keys from `DIMENSION_KEY_MAP`. Reporting views
-expose only batches recorded in `PUBLISHED_BATCH`. The broader logical target is
-documented in [architecture notes](docs/architecture/README.md) and the
-[data dictionary v2](docs/submissions/phase-1/v2/data-dictionary-v2.xlsx); the
-Phase 2 physical surrogate-key addendum is
-[here](docs/phase2/PHASE2_DATA_DICTIONARY_ADDENDUM.md).
+Full detail with evidence paths: [Phase 3 insights report](docs/phase3/INSIGHTS_REPORT.md).
 
-## Phase 2 implementation status
+## Platform strategy and cost policy
 
-The repository contains the complete strict-ELT implementation for the Nov 18
-phase 2 spec: five extractors, deterministic shard manifests, seven Snowflake
-schemas, current-state bronze upserts, silver identity resolution, taxonomy
-scoring, conformed dimensions, facts/bridges, a 12-rule DQ gate, a fail-closed
-publish procedure, task-graph orchestration, and GitHub Actions for extraction
-and SQL deployment. Static contracts and mocked tests pass.
+One production target: **Snowflake**, accessed with key-pair authentication
+through the official Python connector. There is no PostgreSQL, SQLite or
+local-database fallback for ingestion; deterministic tests use a mocked
+Snowflake adapter purely as a testing technique. Production runs must use a
+currently available **no-cost** Snowflake trial/credits offer. Paid resources
+are never activated, and if no no-cost offer is available, live deployment
+stops and is reported as **BLOCKED** — never switched to another database.
 
-The OpenAlex full backfill is live-proven end to end: 5 files, 168,725 records,
-all CRITICAL DQ rules passing, and batch `BATCH_07D9668D4CBED88D815D30CA`
-`PUBLISHED`. See [live evidence](docs/phase2/evidence/2026-11-19-openalex-full-load.md).
-OpenAlex incremental, other sources, and the live zero-record path remain
-**not live-proven**; OpenAlex incremental currently returns HTTP 403 because
-`from_updated_date` requires a Member+/Partner plan. See the
-[implementation status](docs/phase2/IMPLEMENTATION_STATUS.md),
-[legacy acceptance report](docs/phase2/ACCEPTANCE_REPORT.md), and
-[read-only acceptance queries](sql/99_tests/01_acceptance.sql).
+The account runs one X-Small warehouse with 60-second auto-suspend, guarded
+by a resource monitor, with the analytical layer marked `-- Deploy: manual`
+so the deployment client never runs the 14 queries, the three OLAP analyses or
+the benchmark by accident. Cost position and every measure applied:
+[cost log](docs/phase3/COST_LOG.md). Setup and operating instructions:
+[Phase 2 runbook](docs/phase2/RUNBOOK.md) and
+[step-by-step Snowflake setup](docs/phase2/SNOWFLAKE_SETUP_STEP_BY_STEP.md).
 
 ## Course alignment
 
-- **Phase 1 (30%):** proposal, business requirements, 10+ analytical questions, business processes, fact types and grains, dimensions/hierarchies, natural/surrogate keys, conceptual/logical/physical model, diagram and data dictionary.
-- **Phase 2 (40%, implementation complete; live acceptance partial):** source ingestion, `project_staging`, `project_dw`, `project_reporting`, cleaning/transformation, surrogate-key loads, 168,725 OpenAlex outputs and citation snapshots in the live full load, and quality reports.
-- **Phase 3 (30%, not started):** analytical SQL, `ROLLUP`, `CUBE`, reporting views, before/after `EXPLAIN ANALYZE`, indexes, three-page Power BI dashboard equivalent, screenshots, business insight report and final presentation.
+| Phase | Weight | State | Evidence |
+|---|---:|---|---|
+| Phase 1 | 30% | delivered | proposal, business requirements, 14 analytical questions, business processes, fact types and grains, dimensions, natural/surrogate keys, conceptual-logical-physical model, diagrams, data dictionary |
+| Phase 2 | 40% | delivered, live-proven on 5 batches | source ingestion, `PROJECT_STAGING` / `PROJECT_DW` / `PROJECT_REPORTING`, cleaning and transformation, surrogate-key loads, DQ gate and publication views |
+| Phase 3 | 30% | delivered | analytical SQL, `ROLLUP`/`CUBE`, five reporting views, measured optimization, Power BI specification, insight report and deck |
 
-The lab's retail sales examples are not copied into PaperSonar. Implement the same DWBI techniques using research-output measures. Full traceability is in [course requirements matrix](docs/requirements/course-requirements-matrix.md).
+The lab's retail examples are not copied into PaperSonar: the same DWBI
+techniques are implemented with research-output measures. The element-by-element
+mapping is in [course mapping](docs/phase3/COURSE_MAPPING.md) and the
+requirement-by-requirement traceability in the
+[requirements matrix](docs/requirements/course-requirements-matrix.md).
 
 ## Repository map
 
-- `docs/project-scope.md` — product scope and boundaries (older baseline; use v2 docs for the expanded source design).
-- `docs/sources.md` — five-source acquisition and incremental plan.
-- `docs/architecture/README.md` — target architecture, logical entities and Snowflake compatibility.
-- `docs/requirements/` — incremental design and course traceability.
-- `docs/decisions/` — recorded architecture choices.
-- `docs/submissions/phase-1/` — original Phase 1 artifacts retained for history.
-- `docs/submissions/phase-1/v2/` — expanded Phase 1 design baseline and revised data dictionary.
-- `docs/phase2/spec/` — the 20-document Nov 18 Phase 2 implementation pack plus the agent contract.
-- `docs/phase2/IMPLEMENTATION_STATUS.md` — what is implemented, which live checks passed, and what remains BLOCKED/`VERIFY:`.
-- `docs/phase2/REPOSITORY_AUDIT.md` — Phase 2 Step 0 audit artifact.
-- `docs/phase2/SOURCE_CAPABILITY_MATRIX.md` — verified API facts and per-source implementation decisions.
-- `docs/phase2/RUNBOOK.md` — operator runbook: Snowflake setup, secrets, commands, recovery, troubleshooting.
-- `docs/phase2/ACCEPTANCE_REPORT.md` — legacy Phase 1/earlier Phase 2 requirement-to-evidence matrix (PASS / PASS-MOCK / BLOCKED).
-- `docs/phase2/PHASE2_DATA_DICTIONARY_ADDENDUM.md` — physical Phase 2 surrogate-key columns.
-- `docs/phase2/PHASE2_EVIDENCE_QUERIES.sql` — earlier read-only evidence queries; use `sql/99_tests/01_acceptance.sql` for the new model.
-- `src/extract/` — five source adapters and raw gzip NDJSON writer.
-- `src/runner/` — deterministic windows, Snowflake upload/manifest, CLI, SQL deployment.
-- `src/papersonar/` — legacy Phase 1/earlier Phase 2 package retained until the force-push backup is complete; not used by the new workflow.
-- `sql/00_setup/` … `sql/09_tasks/` — deployable strict-ELT SQL in layer order.
-- `sql/99_tests/01_acceptance.sql` — read-only acceptance evidence queries.
-- `tests/sql/test_sql_contracts.py` — static config/SQL drift and architecture guards.
-- `.github/workflows/extract-load.yml` — scheduled/manual extraction, upload and graph trigger.
-- `.github/workflows/deploy-ci.yml` — reviewed SQL deployment through the internal stage.
-- `.github/workflows/legacy-phase2.yml.disabled` — old pipeline workflow, intentionally disabled.
-- `config/corpus.example.json` — non-runnable source/corpus design contract.
-- `database/schema/001_initial_schema.sql` — original publication-centered proposed schema; not the Phase 2 implementation.
-- `data/samples/` — small pilot only; not a complete research corpus.
+**Phase 3 delivery**
+- `docs/phase3/` — plan, status, metric catalogue, taxonomy runbook, OLAP notes, optimization report, Power BI spec, insights report (+ PDF, deck), course mapping, cost log
+- `docs/phase3/evidence/` — `00_taxonomy/`, `01_queries/` (Q01–Q14 exports), `02_olap/` (OLP1–OLP3), `03_optimization/` (before/after artefacts and timings)
+
+**Design and requirements**
+- `docs/architecture/` — target architecture, logical model and the diagram set
+- `docs/requirements/` — traceability matrix, incremental ingestion design, source verification log
+- `docs/decisions/` — recorded architecture decisions, including the free-first platform choice
+- `docs/sources.md` — five-source acquisition and incremental plan
+- `docs/submissions/phase-1/` — original Phase 1 artifacts, retained for history
+
+**Phase 2**
+- `docs/phase2/spec/` — the 20-document implementation pack and the agent contract
+- `docs/phase2/RUNBOOK.md` — operator runbook: setup, secrets, commands, recovery, troubleshooting
+- `docs/phase2/IMPLEMENTATION_STATUS.md`, `ACCEPTANCE_REPORT.md`, `REPOSITORY_AUDIT.md`, `SOURCE_CAPABILITY_MATRIX.md`, `PIPELINE_FLOW_GUIDE.md`
+
+**Code**
+- `src/extract/` — five source adapters and the raw gzip NDJSON writer
+- `src/runner/` — deterministic windows, Snowflake upload/manifest, CLI, SQL deployment
+- `sql/00_setup/` … `sql/10_analytics/` — deployable strict-ELT SQL in layer order, plus the manual analytical layer
+- `sql/99_tests/` — read-only acceptance evidence queries
+- `scripts/` — taxonomy seed generator, insight artifact builder (PDF/deck)
+- `tests/` — 270 unit, contract and SQL-guard tests
+- `config/` — source registry, quality rules, taxonomy contract, corpus example
+
+**Automation**
+- `.github/workflows/extract-load.yml` — scheduled/manual extraction, upload and graph trigger
+- `.github/workflows/deploy-ci.yml` — tested, reviewed SQL deployment through the internal stage
+
+## How to run it
+
+```bash
+python -m pip install -e ".[dev]"     # dependencies
+python -m pytest tests -q             # 270 tests
+python -m ruff check src tests        # lint
+python -m runner.cli deploy --sql-dir sql --yes   # deploy the SQL layer (admin role)
+```
+
+Deployment through GitHub Actions: **Actions → deploy-ci → Run workflow**,
+branch `main`, confirmation input `DEPLOY`. Manual runs need the confirmation
+input; pushes that touch `sql/**`, `config/**` or `src/runner/**` deploy
+automatically after the test job. `sql/00_setup/` and every file marked
+`-- Deploy: manual` are skipped by the client.
+
+Regenerate the report artifacts after editing the insights report:
+
+```bash
+python scripts/build_insights_artifacts.py   # writes INSIGHTS_REPORT.pdf and INSIGHTS_DECK.pptx
+```
+
+## Known limits and blockers
+
+Stated plainly, because a warehouse that hides its limits is not evidence.
+
+- **OpenAlex incremental is blocked** by the source: `from_updated_date`
+  requires a Member+/Partner plan and returns HTTP 403. The full backfill is
+  live; the incremental path is not, and no fallback was invented.
+- **DataCite is not live-proven.** Its three batches failed on two truncating
+  columns, which are fixed and verified live
+  (`VARCHAR(4000)`), and on extraction behaviour outside the project. The
+  remaining blocker is the registry, not the code.
+- **Topic coverage has a measured ceiling** of about 35% for Crossref and
+  Zenodo, because those records carry no structured subject field.
+- **The Power BI PBIX is not built**: the desktop client is outside the
+  warehouse, so the deliverable is a complete three-page specification with
+  visuals, DAX measures and caveats.
+- **Affiliation metadata is sparse and skewed** — 101,257 outputs, all
+  outside 2012–2025, with one identifier holding 56.9% of the credit.
+- **The Snowflake trial is the binding constraint** on the remaining work: it
+  ends around 2026-12-15 with roughly $328 of $400 in credits. Everything
+  course-visible is therefore committed to the repository before the deadline.
 
 ## Roadmap
 
-1. [x] Initial PaperSonar scope, publication-centered model and 20-record pilot.
-2. [x] Expand Phase 1 source strategy and target architecture to five sources.
-3. [ ] Profile topic/year/resource-type partitions and source overlap.
-4. [ ] Approve source-neutral logical model and revised physical dictionary.
-5. [ ] Freeze corpus boundary, storage budget, refresh cadence and free-service assumptions.
-6. [~] Phase 2: strict-ELT extractors, current-state bronze, silver identity, dimensional model, DQ gate, publication views and task graph — **repository implementation complete; OpenAlex full load live-proven, incremental blocked by Member+/Partner plan**.
-7. [ ] Phase 3: implement analytical SQL, OLAP, reporting views, optimization report and Power BI deliverables.
-8. [ ] Validate evidence dossiers and direction-comparison workflow with researchers.
+1. [x] Initial scope, publication-centered model and 20-record pilot.
+2. [x] Five-source strategy and target architecture.
+3. [x] Phase 2: strict-ELT extractors, current-state bronze, silver identity, dimensional model, DQ gate, publication views and task graph.
+4. [x] Live multi-source ingestion: five published batches, 296,299 outputs.
+5. [x] Phase 3: taxonomy, 14 analytical questions, OLAP, five reporting views, measured optimization, Power BI specification, insight report and deck.
+6. [x] Account housekeeping and final delivery on `main`.
+7. [ ] Re-test clustering when the relation fact passes ~25 million rows.
+8. [ ] Publish the DataCite path once the registry serves a stable extraction window.
+9. [ ] Build the PBIX from `docs/phase3/POWERBI_SPEC.md` on a desktop client.
+10. [ ] Validate the direction-comparison workflow with real researchers.
 
 ## Licensing and evidence
 
-The repository code licence does not automatically license external metadata or linked full-text content. Retain source, licence/terms reference, extraction time, source identifier, raw checksum and transformation version. Full raw records, credentials, logs, and database dumps stay out of Git. API limits and source policies must be rechecked before implementation.
+The repository code licence does not automatically license external metadata
+or linked full-text content. Retain source, licence/terms reference,
+extraction time, source identifier, raw checksum and transformation version.
+Full raw records, credentials, logs and database dumps stay out of Git. API
+limits and source policies must be rechecked before implementation.
+
+Every figure quoted in this README is backed by a committed evidence file
+under `docs/phase3/evidence/`, and the live account state is summarised in
+[Phase 3 status](docs/phase3/PHASE3_STATUS.md).

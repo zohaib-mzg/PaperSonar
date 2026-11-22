@@ -1,6 +1,6 @@
 # Requirements traceability matrix v2
 
-This matrix keeps course requirements separate from PaperSonar product scope. Phase 2 items were implemented and live-verified on 2026-11-22; Phase 3 items are implemented on the `phase3` branch and evidenced in `docs/phase3/evidence/` (every Phase 3 requirement is now validated; the last open task is the account housekeeping). The Phase 3 delivery state is summarized in `docs/phase3/PHASE3_STATUS.md`.
+This matrix keeps course requirements separate from PaperSonar product scope. Phase 2 items were implemented and live-verified on 2026-11-22; Phase 3 items are implemented, live-verified and evidenced in `docs/phase3/evidence/` on the `main` branch (every Phase 3 requirement is validated and the account housekeeping is complete). The Phase 3 delivery state is summarized in `docs/phase3/PHASE3_STATUS.md`.
 
 | Requirement | Phase | PaperSonar response | Evidence / acceptance proof | State |
 |---|---|---|---|---|
