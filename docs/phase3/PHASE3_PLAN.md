@@ -29,7 +29,7 @@ result that is stored in `docs/phase3/evidence/`.
 | --- | --- | --- |
 | Five sources extracted | OpenAlex, Crossref, arXiv, Zenodo published; DataCite in flight | `docs/phase2/evidence/` |
 | DQ gate fail-closed and green | All 12 rules PASS, all CRITICAL rules PASS on published batches | `res/I.csv`, `PROJECT_AUDIT.DQ_RESULT` |
-| Star schema populated | 264,916+ facts, 381K authors, 27.9K institutions, 1.81M relations | `res/D1.csv`, `res/A7.csv` |
+| Star schema populated | 296,299 facts (five published batches), 381K authors, 27.9K institutions, 1.81M relations | `docs/phase3/evidence/00_taxonomy/WP1_TAXONOMY_EVIDENCE.md`, `res/D1.csv`, `res/A7.csv` |
 | Surrogate-key integrity | 0 orphans, 0 null SKs, 0 duplicate grains | `sql/99_tests/02_phase2_verification.sql` section D |
 | Publication contract | Reporting views expose only published batches | `PROJECT_REPORTING.VW_*` |
 | Task graph and scheduler | 10-task graph, root suspended, GitHub is the sole scheduler | `res/B1.csv` |
@@ -73,7 +73,7 @@ is invented anywhere.
 
 | Decision | Choice | Reason |
 | --- | --- | --- |
-| "Topic taxonomy" for OLAP and views | the 21-row `REF_CATEGORY` taxonomy reached through `BRIDGE_OUTPUT_TOPIC_CATEGORY` | It is the only output-to-taxonomy path in the model. `DIM_TOPIC` (70,103 rows) has no fact bridge and therefore cannot answer Q01/Q05; this is documented, not hidden. |
+| "Topic taxonomy" for OLAP and views | the 67-row `REF_CATEGORY` taxonomy (taxonomy contract v3) reached through `BRIDGE_OUTPUT_TOPIC_CATEGORY` | It is the only output-to-taxonomy path in the model. `DIM_TOPIC` (70,103 rows) has no fact bridge and therefore cannot answer Q01/Q05; this is documented, not hidden. |
 | Category scope | `IS_PRIMARY = TRUE` for single-category questions; all categories for intersection questions | Matches the Q1x definitions (primary topic) and Q05 (co-assigned works) |
 | `unclassified` | excluded from growth/share rankings, reported separately as a coverage category | Prevents a fake 100% coverage claim |
 | Denominator discipline | every ratio query returns numerator, denominator and the unknown/unspecified share | Required by Q09 and Q12 |
