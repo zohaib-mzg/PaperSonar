@@ -126,6 +126,10 @@ USE ROLE PAPERSONAR_ADMIN;
 USE WAREHOUSE WH_PAPERSONAR_ELT;
 ```
 
+The claim is released at the end of every batch, so step 1 has to be repeated
+for each batch. A stage that returns `NO_BATCH` means the control table was
+empty, not that the stage failed.
+
 ```sql
 -- 1. Claim the batch by hand. SP_CLAIM_BATCH only picks STATUS = 'LOADED'
 --    batches, and these five are already PUBLISHED, so the control table is
@@ -173,9 +177,17 @@ ORDER BY OUTPUTS DESC;
 ```
 
 ```sql
--- 4. Release the claim
+-- 4. Release the claim (mandatory: the next batch needs to claim again)
 DELETE FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH;
 ```
+
+**If a stage fails:** `SP_RUN_STAGE` re-raises the error, writes the failure to
+`RUN_LOG` and to `BATCH.ERROR_SUMMARY`, and the batch stays unpublished until
+the stage succeeds. A failed `CATEGORIZE` leaves `STG_OUTPUT_CATEGORY` empty
+for that batch, which makes DQ-012 fail as CRITICAL and blocks the
+publication; re-running the five stages repairs it, because the stages rebuild
+the staging rows, the bridge rows, the DQ results and the publication row in
+that order.
 
 Batches to re-run (from the Phase 2 closeout evidence):
 
