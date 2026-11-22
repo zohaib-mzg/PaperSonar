@@ -189,6 +189,14 @@ publication; re-running the five stages repairs it, because the stages rebuild
 the staging rows, the bridge rows, the DQ results and the publication row in
 that order.
 
+**Re-publication mode:** a batch that is already in `PUBLISHED_BATCH` is being
+re-categorized, not re-ingested. The ingestion reconciliation rules (DQ-001
+manifest vs staging, DQ-002 staging vs bronze) compare layers that this run
+did not produce, so the DQ stage records them as `SKIPPED` with the reason in
+`DQ_RESULT.NOTE` instead of reporting them as failures. The gate only blocks
+on `STATUS = 'FAIL'`, so a skipped rule never blocks the publication, and the
+rules were evaluated when the batch was published the first time.
+
 Batches to re-run (from the Phase 2 closeout evidence):
 
 | Order | Batch | Source | Records |

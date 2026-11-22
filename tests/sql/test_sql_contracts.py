@@ -503,6 +503,47 @@ def test_taxonomy_seed_deactivates_superseded_rows() -> None:
     ) in seed
 
 
+def test_dq_skips_ingestion_rules_when_a_batch_is_republished() -> None:
+    """A re-categorization run must not fail the ingestion reconciliation.
+
+    Re-running the categorization, dimension, fact, DQ and publication stages
+    for an already published batch does not re-process the raw staging layer.
+    The ingestion reconciliation rules (DQ-001, DQ-002) therefore cannot be
+    evaluated and are recorded as SKIPPED with a reason, instead of failing the
+    publication gate with a value that says nothing about the current data.
+    """
+    procedure = _read(SQL_ROOT / "08_audit_dq" / "02_run_dq.sql")
+    assert "republish_mode" in procedure, (
+        "the DQ procedure must detect a re-publication run"
+    )
+    assert "FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH" in procedure, (
+        "the re-publication mode must be detected from the published batch"
+    )
+    assert "IFF(:republish_mode, 'SKIPPED'" in procedure, (
+        "the ingestion reconciliation rules must be skipped in re-publication mode"
+    )
+    assert "WHEN checks.STATUS = 'SKIPPED'" in procedure, (
+        "a skipped rule must carry the reason in the result note"
+    )
+    assert "CHECKED_AT, NOTE" in procedure, (
+        "the DQ result must record the note"
+    )
+    assert (
+        "ADD COLUMN IF NOT EXISTS NOTE VARCHAR(1000)" in _read(SQL_ROOT / "08_audit_dq" / "00_dq_result_note.sql")
+    ), "the DQ result note column must be added idempotently"
+
+
+def test_publication_gate_ignores_skipped_rules() -> None:
+    """Only a failed critical rule may block a publication."""
+    publish = _read(SQL_ROOT / "07_reporting" / "03_publish_batch.sql")
+    assert "COUNT_IF(SEVERITY = 'CRITICAL' AND STATUS = 'FAIL')" in publish, (
+        "the publication gate must count only failed critical rules"
+    )
+    assert "SKIPPED" not in publish, (
+        "a skipped rule must never block a publication"
+    )
+
+
 def test_boundary_matching_separates_lookalike_words() -> None:
     """The matching semantics must keep lookalike words apart.
 

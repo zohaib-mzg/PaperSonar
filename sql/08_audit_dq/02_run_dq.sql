@@ -22,6 +22,7 @@ DECLARE
   batch_id           VARCHAR DEFAULT NULL;
   critical_failures  NUMBER DEFAULT 0;
   total_failures     NUMBER DEFAULT 0;
+  republish_mode     BOOLEAN DEFAULT FALSE;
 BEGIN
   SELECT BATCH_ID INTO :batch_id
   FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH
@@ -31,12 +32,23 @@ BEGIN
     RETURN 'NO_BATCH';
   END IF;
 
+  -- A batch that is already in PUBLISHED_BATCH is being re-categorized, not
+  -- re-ingested. The ingestion reconciliation rules compare layers that this
+  -- run did not produce, so they are recorded as SKIPPED with a reason instead
+  -- of being reported as failures. They were evaluated when the batch was
+  -- published the first time.
+  SELECT EXISTS (
+    SELECT 1
+    FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH
+    WHERE BATCH_ID = :batch_id
+  ) INTO :republish_mode;
+
   DELETE FROM PAPERSONAR.PROJECT_AUDIT.DQ_RESULT WHERE BATCH_ID = :batch_id;
 
   INSERT INTO PAPERSONAR.PROJECT_AUDIT.DQ_RESULT (
     DQ_RESULT_ID, BATCH_ID, RULE_ID, RULE_VERSION, LAYER, SEVERITY,
     DESCRIPTION, OBSERVED_VALUE, THRESHOLD_VALUE, STATUS, QUERY_ID,
-    CHECKED_AT
+    CHECKED_AT, NOTE
   )
   SELECT
     :batch_id || ':' || checks.RULE_ID,
@@ -50,15 +62,21 @@ BEGIN
     checks.THRESHOLD_VALUE,
     checks.STATUS,
     LAST_QUERY_ID(),
-    CURRENT_TIMESTAMP()
+    CURRENT_TIMESTAMP(),
+    CASE
+      WHEN checks.STATUS = 'SKIPPED'
+      THEN 'Not re-evaluated: this batch was published before and the raw '
+           || 'ingestion layer was not re-processed in this run.'
+      ELSE NULL
+    END AS NOTE
   FROM (
     -- DQ-001: manifest vs staging per file ----------------------------------
     SELECT
       'DQ-001' AS RULE_ID,
       'STAGING' AS LAYER,
-      COUNT(*) AS OBSERVED_VALUE,
+      IFF(:republish_mode, NULL, COUNT(*)) AS OBSERVED_VALUE,
       0 AS THRESHOLD_VALUE,
-      IFF(COUNT(*) = 0, 'PASS', 'FAIL') AS STATUS
+      IFF(:republish_mode, 'SKIPPED', IFF(COUNT(*) = 0, 'PASS', 'FAIL')) AS STATUS
     FROM PAPERSONAR.PROJECT_AUDIT.BATCH_MANIFEST manifest
     LEFT JOIN (
       SELECT FILE_NAME, COUNT(*) AS STAGED_ROWS
@@ -94,9 +112,14 @@ BEGIN
 
     -- DQ-002: distinct staged observation keys vs bronze --------------------
     SELECT
-      'DQ-002',
-      'BRONZE',
-      ABS(
+      'DQ-002' AS RULE_ID,
+      'BRONZE' AS LAYER,
+      IFF(:republish_mode, NULL, staged_bronze.DIFFERENCE) AS OBSERVED_VALUE,
+      0 AS THRESHOLD_VALUE,
+      IFF(:republish_mode, 'SKIPPED',
+          IFF(staged_bronze.DIFFERENCE = 0, 'PASS', 'FAIL')) AS STATUS
+    FROM (
+      SELECT ABS(
         (
           SELECT COUNT(*)
           FROM (
@@ -155,72 +178,8 @@ BEGIN
           + (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_BRONZE.BRZ_ZENODO_RECORD
               WHERE BATCH_ID = :batch_id)
         )
-      ),
-      0,
-      IFF(
-        ABS(
-          (
-            SELECT COUNT(*)
-            FROM (
-              SELECT DISTINCT SOURCE_NAME, RECORD_KEY
-              FROM (
-                SELECT
-                  'OPENALEX' AS SOURCE_NAME,
-                  REGEXP_REPLACE(
-                    PAYLOAD:id::STRING, '^https?://openalex[.]org/', ''
-                  ) AS RECORD_KEY,
-                  SHA2(TO_JSON(PAYLOAD), 256) AS RECORD_HASH
-                FROM PAPERSONAR.PROJECT_STAGING.STG_OPENALEX_WORK
-                WHERE BATCH_ID = :batch_id
-                UNION ALL
-                SELECT
-                  'CROSSREF',
-                  COALESCE(PAYLOAD:DOI::STRING, PAYLOAD:URL::STRING),
-                  SHA2(TO_JSON(PAYLOAD), 256)
-                FROM PAPERSONAR.PROJECT_STAGING.STG_CROSSREF_WORK
-                WHERE BATCH_ID = :batch_id
-                UNION ALL
-                SELECT
-                  'ARXIV',
-                  PAYLOAD:identifier::STRING,
-                  SHA2(TO_JSON(PAYLOAD), 256)
-                FROM PAPERSONAR.PROJECT_STAGING.STG_ARXIV_RECORD
-                WHERE BATCH_ID = :batch_id
-                UNION ALL
-                SELECT
-                  'DATACITE',
-                  COALESCE(PAYLOAD:attributes.doi::STRING, PAYLOAD:id::STRING),
-                  SHA2(TO_JSON(PAYLOAD), 256)
-                FROM PAPERSONAR.PROJECT_STAGING.STG_DATACITE_DOI
-                WHERE BATCH_ID = :batch_id
-                UNION ALL
-                SELECT
-                  'ZENODO',
-                  PAYLOAD:identifier::STRING,
-                  SHA2(TO_JSON(PAYLOAD), 256)
-                FROM PAPERSONAR.PROJECT_STAGING.STG_ZENODO_RECORD
-                WHERE BATCH_ID = :batch_id
-              )
-              WHERE RECORD_KEY IS NOT NULL AND TRIM(RECORD_KEY) <> ''
-            )
-          )
-          -
-          (
-            (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_BRONZE.BRZ_OPENALEX_WORK
-              WHERE BATCH_ID = :batch_id)
-            + (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_BRONZE.BRZ_CROSSREF_WORK
-                WHERE BATCH_ID = :batch_id)
-            + (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_BRONZE.BRZ_ARXIV_RECORD
-                WHERE BATCH_ID = :batch_id)
-            + (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_BRONZE.BRZ_DATACITE_DOI
-                WHERE BATCH_ID = :batch_id)
-            + (SELECT COUNT(*) FROM PAPERSONAR.PROJECT_BRONZE.BRZ_ZENODO_RECORD
-                WHERE BATCH_ID = :batch_id)
-          )
-        ) = 0,
-        'PASS',
-        'FAIL'
-      )
+      ) AS DIFFERENCE
+    ) staged_bronze
 
     UNION ALL
 
