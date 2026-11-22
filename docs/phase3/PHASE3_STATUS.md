@@ -41,8 +41,52 @@ its Power BI specification.
 ## 3. Account and cost state
 
 - Credits: **$328 of $400** left; trial ends in roughly three weeks.
-- Warehouses in use: `WH_PAPERSONAR_ELT` only. `PAPERSONAR_WH` is unused and scheduled for deletion; `COMPUTE_WH` is the account default warehouse and is scheduled to be suspended.
-- The service user `SVC_PAPERSONAR` now defaults to `PAPERSONAR_LOADER` on `WH_PAPERSONAR_ELT`; whether the administrative grant can be revoked depends on whether that user is the deployment login, which is checked in `sql/00_setup/07_housekeeping.sql` step 3.
+- Warehouses in use: `WH_PAPERSONAR_ELT` only (X-Small, auto-suspend 60,
+  resource monitor `RM_PAPERSONAR_ELT`).
+- `PAPERSONAR_WH` was dropped on 2026-11-22; it was created in Phase 1 and
+  superseded by `WH_PAPERSONAR_ELT`.
+- `COMPUTE_WH`, the account default warehouse, is **suspended** with
+  `AUTO_SUSPEND = 60` and the resource monitor `RM_PAPERSONAR_ELT` attached.
+  Snowflake refuses to suspend a warehouse that currently holds the account
+  default role ("Invalid state. Warehouse 'COMPUTE_WH' cannot be suspended."),
+  and `DEFAULT_WAREHOUSE` is not a settable account parameter in this
+  account, so the auto-suspend plus the resource monitor is the effective
+  control: the warehouse stops itself and cannot burn the trial credits.
+  `SNOWFLAKE_LEARNING_WH` and `SYSTEM$STREAMLIT_NOTEBOOK_WH` are provisioning
+  leftovers, both suspended and unused.
+- The service user `SVC_PAPERSONAR` now defaults to `PAPERSONAR_LOADER` on
+  `WH_PAPERSONAR_ELT`. Its `PAPERSONAR_ADMIN` grant was **kept on purpose**:
+  `SHOW GRANTS OF ROLE PAPERSONAR_ADMIN` shows the grant held by
+  `SVC_PAPERSONAR`, and the deployment workflow logs in as `SNOWFLAKE_USER`
+  and assumes `SNOWFLAKE_DEPLOY_ROLE = PAPERSONAR_ADMIN`, so revoking it
+  would stop every deployment. The data path itself runs on the narrow roles
+  (`PAPERSONAR_LOADER`, `PAPERSONAR_TRANSFORMER`, `PAPERSONAR_REPORTER`); the
+  administrative role exists only for the deployment principal. A dedicated
+  deployment role without account-wide rights is the correct future change,
+  and it needs a new GitHub secret, so it was not made at the end of the
+  project.
+
+## 3a. Failed-batch ledger
+
+Five batches are published. Eight failed at some point in the project, and
+every failure is accounted for:
+
+| Batch | Source | Failed at | Cause | Status of the cause |
+|---|---|---|---|---|
+| `BATCH_8773F6D3E97673137420667B` | OpenAlex | extraction | staged part-file size mismatch | transient extraction check; the same source published successfully in `BATCH_07D9668D4CBED88D815D30CA` |
+| `BATCH_70CEE97747ED6A70D3E40411` | Crossref | extraction | four manifest file mismatches | closed manually on 2026-11-22; never transformed, never published |
+| `BATCH_2F4B3168EE13A751ECFE8AE4` | arXiv | silver | `REGEXP_SUBSTR` with a non-capturing group `(?:` | **fixed** — the pattern is gone from `sql/03_silver`; arXiv published later in `BATCH_3DF8101D66B0797A217FD877` |
+| `BATCH_0D23C6C167941A817239C45B` | Zenodo | silver | the same unsupported regular expression | **fixed**; Zenodo published later in `BATCH_A75F9C61B9BF73B40CBC8C54` |
+| `BATCH_3ECE33CC04DCAB9DF46F369D` | arXiv | categorize | `invalid identifier 'M.BASE_WEIGHT'` in the old categorization | **fixed** by the v3 rewrite of `sql/04_categorization/02_categorize_batch.sql` |
+| `BATCH_FA946DC9EA79F54798BBFE82` | DataCite | silver | `PUBLICATION_DATE_RAW` too narrow for a multi-valued date string | **fixed** by `sql/03_silver/04_widen_oversize_text.sql` (widened to `VARCHAR(4000)`) |
+| `BATCH_E0303CAD6AAC633E2C60BC2A` | DataCite | dimensions | `STG_DIM_TOPIC.TOPIC_NAME` too narrow for a long subject string | **fixed** by the same widening script |
+| `BATCH_EB4210A9204AF7243A942647` | DataCite | dimensions | the same `TOPIC_NAME` truncation | **fixed** by the same widening script |
+
+The three DataCite batches therefore failed on **code** that has since been
+corrected; what still blocks DataCite is external (the registry's HTTP
+responses during extraction). The DataCite path is not broken, it is untested
+against a live extraction.
+
 
 ## 4. Evidence index
 
@@ -59,17 +103,11 @@ Supporting documents in `docs/phase3/`: `PHASE3_PLAN.md`, `METRIC_CATALOGUE.md`,
 
 ## 5. Open items
 
-1. **Roll back the clustering keys.** The measurement showed no gain, so
-   `sql/06_facts/03_phase3_clustering.sql` now carries the rollback
-   statements; run them and confirm with `SHOW TABLES` that the three
-   clustering keys are empty. No data changes.
-2. **Housekeeping.** Run `sql/00_setup/07_housekeeping.sql` statement by
-   statement: close the abandoned Crossref batch
-   `BATCH_70CEE97747ED6A70D3E40411` as `FAILED`, set the service-user
-   defaults, decide the administrative revoke, drop `PAPERSONAR_WH` and
-   suspend `COMPUTE_WH`.
-3. **Merge.** Merge `phase3` into `main` once 1 and 2 are closed; the
-   deployment workflow then runs against `main`.
+1. **Confirm the widened columns live.** The DataCite failures were caused by
+   two truncating columns; `sql/03_silver/04_widen_oversize_text.sql` widens
+   them, and the check below confirms it on the account.
+2. **Merge.** Merge `phase3` into `main` and run the deployment workflow
+   against `main` so that the delivered branch is the deployed branch.
 
 ## 6. How to verify the current state
 
@@ -88,4 +126,12 @@ SELECT COUNT(*) AS SNAPSHOT_ROWS FROM PAPERSONAR.PROJECT_DW.FACT_CITATION_SNAPSH
 SHOW VIEWS IN SCHEMA PAPERSONAR.PROJECT_REPORTING;
 SHOW GRANTS OF ROLE PAPERSONAR_ADMIN;
 SHOW WAREHOUSES;
+
+SELECT TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH
+FROM PAPERSONAR.INFORMATION_SCHEMA.COLUMNS
+WHERE (TABLE_NAME = 'SLV_SOURCE_OBSERVATION' AND COLUMN_NAME = 'PUBLICATION_DATE_RAW')
+   OR (TABLE_NAME = 'STG_DIM_TOPIC' AND COLUMN_NAME IN ('TOPIC_NAME', 'TOPIC_KEY'))
+   OR (TABLE_NAME = 'DIM_TOPIC' AND COLUMN_NAME = 'TOPIC_NAME')
+   OR (TABLE_NAME = 'DIMENSION_KEY_MAP' AND COLUMN_NAME = 'BUSINESS_KEY')
+ORDER BY TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME;
 ```
