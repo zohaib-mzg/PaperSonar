@@ -54,8 +54,8 @@ without the warehouse.
 | Course requirement (matrix row) | Work package | Evidence artifact |
 | --- | --- | --- |
 | Analytical aggregations and 14 questions (Phase 3) | WP2 | `sql/10_analytics/01_analytical_queries.sql`, `docs/phase3/METRIC_CATALOGUE.md`, `docs/phase3/evidence/01_queries/*.csv` |
-| `ROLLUP` and `CUBE` | WP3 | `sql/10_analytics/02_rollup_cube.sql`, `docs/phase3/evidence/02_olap/*.csv` |
-| Reporting views: `vw_topic_growth`, `vw_output_coverage`, `vw_citation_cohorts`, `vw_topic_intersections`, `vw_research_community` | WP4 | `sql/10_analytics/03_reporting_views.sql` + deployed views |
+| `ROLLUP` and `CUBE` | WP3 | `sql/10_analytics/09_rollup_cube.sql`, `docs/phase3/OLAP_NOTES.md`, `docs/phase3/evidence/02_olap/*.csv` |
+| Reporting views: `vw_topic_growth`, `vw_output_coverage`, `vw_citation_cohorts`, `vw_topic_intersections`, `vw_research_community` | WP4 | `sql/07_reporting/04_phase3_reporting_views.sql` + deployed views |
 | Query optimization — `EXPLAIN ANALYZE` before/after indexes | WP5 | `sql/10_analytics/04_optimization.sql`, `docs/phase3/OPTIMIZATION_REPORT.md` |
 | Power BI three-page example | WP6 | `docs/phase3/POWERBI_SPEC.md`, DAX, screenshots, `docs/phase3/powerbi/` |
 | Business insights and final presentation | WP7 | `docs/phase3/INSIGHTS_REPORT.md`, `docs/phase3/INSIGHTS_REPORT.pdf`, `docs/phase3/INSIGHTS_DECK.pptx` |
@@ -145,7 +145,7 @@ the Phase 1 question definition so the SQL and the requirement text cannot drift
 
 ### WP3 — OLAP: ROLLUP, CUBE, GROUPING SETS (0.5 day)
 
-* `sql/10_analytics/02_rollup_cube.sql` with three analyses matching the matrix:
+* `sql/10_analytics/09_rollup_cube.sql` with three analyses matching the matrix:
   1. taxonomy × year → `ROLLUP(CATEGORY_KEY, PUBLICATION_YEAR)`
   2. output type × source → `CUBE(OUTPUT_TYPE_KEY, SOURCE_NAME)`
   3. topic × access status → `GROUPING SETS` over category, access status and year
@@ -157,7 +157,7 @@ the Phase 1 question definition so the SQL and the requirement text cannot drift
 
 ### WP4 — Five reporting views (1 day)
 
-`sql/10_analytics/03_reporting_views.sql` creates the matrix-named views:
+`sql/07_reporting/04_phase3_reporting_views.sql` creates the matrix-named views:
 
 | View | Grain | Feeds |
 | --- | --- | --- |
