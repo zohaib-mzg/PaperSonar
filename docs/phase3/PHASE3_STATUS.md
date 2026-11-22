@@ -17,7 +17,7 @@ its Power BI specification.
 | WP2 — fourteen analytical queries (Q01–Q14) | Done | `sql/10_analytics/01..08*.sql`, `docs/phase3/evidence/01_queries/` |
 | WP3 — OLAP (ROLLUP, CUBE, GROUPING SETS) | Done | `sql/10_analytics/09_rollup_cube.sql`, `docs/phase3/OLAP_NOTES.md`, `docs/phase3/evidence/02_olap/` |
 | WP4 — five secure reporting views | Done, deployed | `sql/07_reporting/04_phase3_reporting_views.sql` |
-| WP5 — measured optimization (before/after clustering) | **In progress** — measurement runs outstanding | `docs/phase3/OPTIMIZATION_REPORT.md`, `docs/phase3/evidence/03_optimization/` |
+| WP5 — measured optimization (before/after clustering) | Done — measured, no gain, clustering rolled back | `docs/phase3/OPTIMIZATION_REPORT.md`, `docs/phase3/evidence/03_optimization/` |
 | WP6 — Power BI specification | Done (specification; PBIX itself needs the desktop client) | `docs/phase3/POWERBI_SPEC.md` |
 | WP7 — insight report, PDF and deck | Done | `docs/phase3/INSIGHTS_REPORT.md`, `.pdf`, `INSIGHTS_DECK.pptx` |
 
@@ -59,10 +59,10 @@ Supporting documents in `docs/phase3/`: `PHASE3_PLAN.md`, `METRIC_CATALOGUE.md`,
 
 ## 5. Open items
 
-1. **WP5 measurement.** Run the twelve before-runs and the twelve after-runs
-   described in `docs/phase3/OPTIMIZATION_REPORT.md` §2, save the artefacts in
-   `res/`, and fill in §5 of the report with the measured table and the
-   keep-or-roll-back decision.
+1. **Roll back the clustering keys.** The measurement showed no gain, so
+   `sql/06_facts/03_phase3_clustering.sql` now carries the rollback
+   statements; run them and confirm with `SHOW TABLES` that the three
+   clustering keys are empty. No data changes.
 2. **Housekeeping.** Run `sql/00_setup/07_housekeeping.sql` statement by
    statement: close the abandoned Crossref batch
    `BATCH_70CEE97747ED6A70D3E40411` as `FAILED`, set the service-user

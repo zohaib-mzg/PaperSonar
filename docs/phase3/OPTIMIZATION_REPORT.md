@@ -21,12 +21,13 @@ this size the benefit of clustering has to be measured, not assumed.
 
 ## 2. Method
 
-1. Run each statement three ways and save all three artefacts:
-   * `EXPLAIN USING JSON <statement>` → `BENCHn_plan_before.json`
-     (bytes scanned, partitions scanned and pruned)
-   * `EXPLAIN ANALYZE <statement>` → `BENCHn_analyze_before.txt`
-     (execution time)
+1. Run each statement and save the artefacts:
    * `<statement>` → `BENCHn_before.csv` (the result, which must not change)
+   * `EXPLAIN USING JSON <statement>` → `BENCHn_plan_before.csv`
+     (the logical operator tree)
+   * the Snowsight query profile → compilation, queueing, execution and total
+     time, recorded in `BENCH_TIMINGS.csv`. `EXPLAIN ANALYZE` is not available
+     in this account, so the profile is the timing measurement of record.
 2. Apply the clustering keys from `sql/06_facts/03_phase3_clustering.sql`
    and wait for the re-clustering to finish.
 3. Repeat step 1 with the `after` file names.
@@ -38,18 +39,31 @@ The measured statement is always the deployed statement: nothing is edited
 between the before and the after run, because a benchmark that measures a
 different query measures nothing.
 
-## 3. Baseline artefacts
+## 3. Artefacts
 
-| Artefact | Content | Saved |
-|---|---|---|
-| `BENCH1_before.csv` | the topic growth scan result (48 topic rows with 2023/2025 counts) | `docs/phase3/evidence/03_optimization/BENCH1_before.csv` |
-| `BENCH2_before.csv` | the intersection result (3 reportable topic pairs) | `docs/phase3/evidence/03_optimization/BENCH2_before.csv` |
-| `BENCH1_plan_before.json`, `BENCH2_plan_before.json` | bytes scanned and partition pruning | *pending the after-run* |
-| `BENCHn_analyze_before.txt` | execution time per statement | *pending the after-run* |
+All sixteen artefacts are committed under `docs/phase3/evidence/03_optimization/`:
 
-The two result files are committed now because they are also the evidence for
-Q01 and Q05; the plan and timing artefacts are added when the owner runs the
-measurement forms.
+| Artefact | Content |
+|---|---|
+| `BENCHn_before.csv`, `BENCHn_after.csv` | the result of the plain statement, before and after the change (n = 1…4) |
+| `BENCHn_plan_before.csv`, `BENCHn_plan_after.csv` | the `EXPLAIN USING JSON` operator tree, before and after (the JSON plan inside a CSV cell, as Snowsight downloads it) |
+| `BENCH_TIMINGS.csv` | the measured compilation, queueing, execution and total times for both runs |
+| `BENCH1_before.csv`, `BENCH2_before.csv` | the same two result files as the evidence for Q01 and Q05 |
+
+`EXPLAIN ANALYZE` is not available in this account, so the timing comes from
+the Snowsight query profile panel instead: compilation time, queued
+provisioning time, execution time and total time. The JSON plan is the
+logical operator tree above the secure views and reports `bytesAssigned: 0`,
+so bytes scanned could not be read from it — the profile is the measurement of
+record for this report.
+
+**Validity of the pair.** The four plan files are byte-identical before and
+after, and each result pair contains exactly the same rows with the same
+values: BENCH1 81 rows, BENCH2 4 rows, BENCH3 725 rows, BENCH4 58,421 rows.
+Only the order of rows with equal sort keys differs (for example the two topic
+pairs with 9 joint works swap places), which is the expected non-deterministic
+tie-break of `ORDER BY`. The physical change moved no data and changed no
+result.
 
 ## 4. The change under test
 
@@ -76,16 +90,72 @@ rollback statement ships in the same file.
 
 ## 5. Result
 
-*Filled in from the measured artefacts after the after-run.*
+### 5.1 The measured numbers
 
-| Benchmark | Execution time before | Execution time after | Delta | Bytes before | Bytes after | Delta | Partitions pruned before → after |
-|---|---:|---:|---:|---:|---:|---:|---|
-| BENCH1 | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* |
-| BENCH2 | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* |
-| BENCH3 | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* |
-| BENCH4 | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* | *pending* |
+Single run of each statement, same X-Small warehouse, same data snapshot,
+before and after the three clustering keys were applied.
 
-**Decision:** *pending the measurement.*
+| Benchmark | Result rows | Execution before | Execution after | Δ execution | Total before | Total after | Δ total |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| BENCH1 topic growth | 81 | 2 ms | 1,000 ms | +998 ms | 1,200 ms | 1,600 ms | +400 ms |
+| BENCH2 intersections | 4 | 531 ms | 570 ms | +39 ms (+7%) | 1,200 ms | 1,500 ms | +300 ms |
+| BENCH3 citation flow | 725 | 789 ms | 890 ms | +101 ms (+13%) | 1,200 ms | 1,200 ms | 0 ms |
+| BENCH4 community view | 58,421 | 2 ms | 1,600 ms | +1,598 ms | 562 ms | 1,900 ms | +1,338 ms |
+
+### 5.2 Reading the numbers
+
+**No statement got faster.** The two statements that ran for real before the
+change (BENCH2 and BENCH3) got 7% and 13% slower after it, and the two that
+finished in 2 ms before the change were the two that took seconds after it.
+
+The 2 ms executions are the signature of a Snowflake **result-cache hit**: the
+identical statement had already been run against unchanged data, so Snowflake
+returned the cached result. `ALTER TABLE … CLUSTER BY` rewrites the physical
+layout of the table and invalidates the cached results that depend on it, so
+the after-run had to execute the query for real. The before-run was therefore
+not a cold measurement of the same work — it was a cache lookup — and the
+comparison overstates the cost of the change rather than measuring it.
+
+The two honest numbers are BENCH2 and BENCH3, where both runs executed:
+**+39 ms and +101 ms**. Both statements are the ones that touch the clustered
+tables (`BRIDGE_OUTPUT_TOPIC_CATEGORY` and `FACT_OUTPUT_RELATION`), and both
+got slower, by an amount small enough to be noise on a shared trial warehouse
+but certainly not an improvement.
+
+### 5.3 Why the change cannot pay off at this scale
+
+- The whole fact table is 296,299 rows, the bridge 894,545 rows and the
+  relation fact 2,557,842 rows. On an X-Small warehouse those are scanned in
+  hundreds of milliseconds, so the pruning that clustering buys cannot repay
+  the re-clustering cost.
+- Two of the four statements read through a **secure view**
+  (`VW_RESEARCH_OUTPUT`, `VW_RESEARCH_COMMUNITY`). Snowflake's clustering
+  pruning is applied to the physical tables underneath; the benefit reaches
+  the query only if the predicates line up with the clustering key, and the
+  JSON plan shows no predicate push-down into the view at all.
+- Clustering keys are a continuous cost as well as a one-off one: every later
+  write that does not match the key order triggers background re-clustering,
+  and on a 2.5-million-row table that is real warehouse time on a trial
+  account with 23 days and $328 of credits left.
+
+### 5.4 Decision
+
+**The clustering keys are rolled back.** The rule fixed before the measurement
+was "keep the keys only if the measured execution time or bytes scanned
+improved on the hot statements"; they did not improve on any statement, so the
+project keeps the simpler cluster-free layout and records the negative result
+instead of hiding it.
+
+The rollback statements are at the end of `sql/06_facts/03_phase3_clustering.sql`
+and in §7 below. Rolling back restores the baseline layout and does not change
+a single row of data.
+
+**When to revisit this decision.** Clustering is not a bad idea in general; it
+is a bad deal at this size. The trigger for re-measuring is corpus growth:
+when `FACT_OUTPUT_RELATION` passes roughly 25 million rows or the analytical
+tables pass five million, the pruning effect becomes visible and the same
+before/after measurement should be run again with three repetitions per
+statement and a cold warehouse, so that the result cache cannot distort it.
 
 ## 6. Caveats that apply to whatever the measurement says
 
@@ -102,11 +172,50 @@ rollback statement ships in the same file.
    data snapshot. No result is generalized beyond that environment.
 4. **Clustering is a physical layout change, not a logical one.** It changes
    how the same query is executed, never what it returns. The `before` and
-   `after` result files must be identical; if they are not, something else
-   changed and the measurement is void.
-5. **A negative result is a valid result.** If the measurement shows no
-   improvement, the rollback in `sql/06_facts/03_phase3_clustering.sql` is
-   the correct action and the report says so. The physical-design extras
+   `after` result files contain the same rows and the same values; only the
+   order of tied rows differs, which is the expected non-deterministic
+   tie-break of `ORDER BY`. If a row or a value had differed, the measurement
+   would have been void.
+5. **A negative result is a valid result.** The measurement showed no
+   improvement, so the rollback in `sql/06_facts/03_phase3_clustering.sql` is
+   the action taken and this report says so. The physical-design extras
    (materialized view, dynamic table) stay undeployed for the same reason:
    they are in `sql/07_reporting/02_physical_demos.sql`, marked
    `-- Deploy: manual`, and are never created without measured benefit.
+6. **One run per statement.** Each statement was measured once, on a trial
+   warehouse that is shared and that suspends after 60 seconds, so the
+   absolute numbers carry single-run noise. The before-run was further
+   distorted by the result cache (§5.2). The conclusion rests on the
+   direction of every difference — slower in all four cases — and not on the
+   size of any single delta.
+7. **The `ALTER TABLE` was asynchronous.** Snowflake re-clusters in the
+   background, so the after-run may have overlapped with background
+   re-clustering work. That can only make the after-run look worse, not
+   better, which is consistent with the measured direction but does not
+   exclude a small benefit once the re-clustering has settled.
+
+## 7. The rollback
+
+```sql
+USE ROLE PAPERSONAR_ADMIN;
+USE WAREHOUSE WH_PAPERSONAR_ELT;
+
+ALTER TABLE PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT
+  DROP CLUSTERING KEY;
+
+ALTER TABLE PAPERSONAR.PROJECT_DW.FACT_OUTPUT_RELATION
+  DROP CLUSTERING KEY;
+
+ALTER TABLE PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY
+  DROP CLUSTERING KEY;
+
+SHOW TABLES LIKE 'FACT_RESEARCH_OUTPUT' IN SCHEMA PAPERSONAR.PROJECT_DW;
+SHOW TABLES LIKE 'FACT_OUTPUT_RELATION' IN SCHEMA PAPERSONAR.PROJECT_DW;
+SHOW TABLES LIKE 'BRIDGE_OUTPUT_TOPIC_CATEGORY' IN SCHEMA PAPERSONAR.PROJECT_DW;
+```
+
+The three `SHOW TABLES` statements must report `clustering_key` as empty for
+every table. The rollback changes the physical layout only; the row counts,
+the query results and the published batches stay exactly as they are, and
+`docs/phase3/evidence/03_optimization/` keeps the before-and-after evidence
+of the change that was tested and rejected.

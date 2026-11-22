@@ -1,0 +1,2 @@
+content
+"{""GlobalStats"":{""partitionsTotal"":0,""partitionsAssigned"":0,""bytesAssigned"":0},""Operations"":[[{""id"":0,""operation"":""Result"",""expressions"":[""COUNT(*)""]},{""id"":1,""operation"":""Aggregate"",""expressions"":[""aggExprs: [COUNT(*)]""],""parentOperators"":[0]},{""id"":2,""operation"":""SecureView"",""objects"":[""PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_COMMUNITY""],""parentOperators"":[1]}]]}"
