@@ -73,7 +73,7 @@ SELECT
   cohort.CATEGORY_LABEL,
   cohort.PUBLICATION_YEAR,
   cohort.OUTPUT_TYPE_NAME,
-  (SELECT SNAPSHOT_DATE FROM snapshot_dates) AS SNAPSHOT_DATE,
+  dates.SNAPSHOT_DATE,
   COUNT(DISTINCT cohort.OUTPUT_SK) AS COHORT_SIZE,
   COUNT(DISTINCT observed.OUTPUT_SK) AS COHORT_WITH_SNAPSHOT,
   COUNT(DISTINCT IFF(observed.OUTPUT_SK IS NULL, cohort.OUTPUT_SK, NULL)) AS COHORT_MISSING_SNAPSHOT,
@@ -83,9 +83,10 @@ SELECT
   MAX(observed.SOURCE_NAME) AS SCOPE_SOURCE,
   CURRENT_DATE() AS RETRIEVED_ON
 FROM cohort
+CROSS JOIN snapshot_dates dates
 LEFT JOIN observed
   ON observed.OUTPUT_SK = cohort.OUTPUT_SK
-GROUP BY 1, 2, 3, 4, 6
+GROUP BY 1, 2, 3, 4, 5
 ORDER BY cohort.CATEGORY_KEY, cohort.PUBLICATION_YEAR, cohort.OUTPUT_TYPE_NAME;
 
 -- ---------------------------------------------------------------------------

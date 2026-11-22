@@ -47,7 +47,7 @@ output_with_institution AS (
 known_institution AS (
   SELECT DISTINCT
     output_with_institution.OUTPUT_SK,
-    institution_bridge.INSTITUTION_SK
+    output_with_institution.INSTITUTION_SK
   FROM output_with_institution
   JOIN PAPERSONAR.PROJECT_DW.DIM_INSTITUTION institution
     ON institution.INSTITUTION_SK = output_with_institution.INSTITUTION_SK

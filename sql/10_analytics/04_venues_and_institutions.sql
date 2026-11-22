@@ -226,7 +226,12 @@ institution_topic AS (
 ),
 classified AS (
   SELECT
-    institution_topic.*,
+    institution_topic.CATEGORY_KEY,
+    institution_topic.PUBLICATION_YEAR,
+    institution_topic.INSTITUTION_SK,
+    institution_topic.INSTITUTION_KEY,
+    institution_topic.FRACTIONAL_CREDIT,
+    institution_topic.DISTINCT_WORKS,
     institution.IS_UNKNOWN
   FROM institution_topic
   JOIN PAPERSONAR.PROJECT_DW.DIM_INSTITUTION institution
@@ -235,11 +240,19 @@ classified AS (
 ),
 ranked AS (
   SELECT
-    classified.*,
-    SUM(FRACTIONAL_CREDIT) OVER (PARTITION BY CATEGORY_KEY, PUBLICATION_YEAR) AS TOPIC_CREDIT,
+    classified.CATEGORY_KEY,
+    classified.PUBLICATION_YEAR,
+    classified.INSTITUTION_SK,
+    classified.INSTITUTION_KEY,
+    classified.FRACTIONAL_CREDIT,
+    classified.DISTINCT_WORKS,
+    classified.IS_UNKNOWN,
+    SUM(classified.FRACTIONAL_CREDIT) OVER (
+      PARTITION BY classified.CATEGORY_KEY, classified.PUBLICATION_YEAR
+    ) AS TOPIC_CREDIT,
     ROW_NUMBER() OVER (
-      PARTITION BY CATEGORY_KEY, PUBLICATION_YEAR
-      ORDER BY FRACTIONAL_CREDIT DESC, INSTITUTION_KEY
+      PARTITION BY classified.CATEGORY_KEY, classified.PUBLICATION_YEAR
+      ORDER BY classified.FRACTIONAL_CREDIT DESC, classified.INSTITUTION_KEY
     ) AS INSTITUTION_RANK
   FROM classified
 ),
@@ -265,6 +278,7 @@ SELECT
   ROUND(ranked.TOPIC_CREDIT, 4) AS TOPIC_CLASSIFIED_CREDIT,
   ROUND(
     SUM(IFF(ranked.INSTITUTION_RANK <= 5, ranked.FRACTIONAL_CREDIT, 0))
+      OVER (PARTITION BY ranked.CATEGORY_KEY, ranked.PUBLICATION_YEAR)
       / NULLIF(ranked.TOPIC_CREDIT, 0),
     6
   ) AS TOP5_INSTITUTION_SHARE,

@@ -37,10 +37,13 @@ WITH published_output AS (
 primary_category AS (
   SELECT
     bridge.OUTPUT_SK,
-    bridge.CATEGORY_KEY
+    bridge.CATEGORY_KEY,
+    category.LABEL AS CATEGORY_LABEL
   FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY bridge
   JOIN published_output output
     ON output.OUTPUT_SK = bridge.OUTPUT_SK
+  JOIN PAPERSONAR.PROJECT_DW.DIM_CATEGORY category
+    ON category.CATEGORY_KEY = bridge.CATEGORY_KEY
   WHERE bridge.IS_PRIMARY
     AND bridge.CATEGORY_KEY <> 'unclassified'
 ),

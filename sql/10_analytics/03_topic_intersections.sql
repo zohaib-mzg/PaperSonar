@@ -81,9 +81,9 @@ pair AS (
 )
 SELECT
   pair.CATEGORY_A,
-  parent_a.LABEL              AS CATEGORY_A_LABEL,
+  parent_dim_a.LABEL            AS CATEGORY_A_LABEL,
   pair.CATEGORY_B,
-  parent_b.LABEL              AS CATEGORY_B_LABEL,
+  parent_dim_b.LABEL            AS CATEGORY_B_LABEL,
   parent_a.PARENT_WORKS       AS PARENT_A_WORKS,
   parent_b.PARENT_WORKS       AS PARENT_B_WORKS,
   pair.JOINT_WORKS,
@@ -100,6 +100,10 @@ JOIN parent_count parent_a
   ON parent_a.CATEGORY_KEY = pair.CATEGORY_A
 JOIN parent_count parent_b
   ON parent_b.CATEGORY_KEY = pair.CATEGORY_B
+JOIN PAPERSONAR.PROJECT_DW.DIM_CATEGORY parent_dim_a
+  ON parent_dim_a.CATEGORY_KEY = pair.CATEGORY_A
+JOIN PAPERSONAR.PROJECT_DW.DIM_CATEGORY parent_dim_b
+  ON parent_dim_b.CATEGORY_KEY = pair.CATEGORY_B
 WHERE parent_a.PARENT_WORKS >= 100
   AND parent_b.PARENT_WORKS >= 100
   AND pair.JOINT_WORKS >= 5
