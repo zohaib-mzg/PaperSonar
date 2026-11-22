@@ -206,6 +206,24 @@ BEGIN
     UNION ALL
     SELECT OUTPUT_BK, CATEGORY_KEY, SCORE, 'KEYWORD', 2 FROM keyword_scores
   ),
+  category_best AS (
+    -- One row per output and category. The same category can be reached by
+    -- more than one method (a native taxonomy value and a keyword hit, for
+    -- example); the strongest method wins and the weaker duplicate is dropped
+    -- so that the staging table and the category bridge keep one row per
+    -- output and category.
+    SELECT
+      OUTPUT_BK,
+      CATEGORY_KEY,
+      SCORE,
+      METHOD,
+      PRIORITY,
+      ROW_NUMBER() OVER (
+        PARTITION BY OUTPUT_BK, CATEGORY_KEY
+        ORDER BY PRIORITY, SCORE DESC, METHOD
+      ) AS CATEGORY_PICK
+    FROM combined
+  ),
   ranked AS (
     SELECT
       OUTPUT_BK,
@@ -216,7 +234,8 @@ BEGIN
         PARTITION BY OUTPUT_BK
         ORDER BY PRIORITY, SCORE DESC, CATEGORY_KEY
       ) AS CATEGORY_RANK
-    FROM combined
+    FROM category_best
+    WHERE CATEGORY_PICK = 1
   ),
   unclassified AS (
     SELECT

@@ -503,6 +503,26 @@ def test_taxonomy_seed_deactivates_superseded_rows() -> None:
     ) in seed
 
 
+def test_categorization_writes_one_row_per_output_and_category() -> None:
+    """A category reached by two methods must be written once.
+
+    The category bridge is keyed by output and category. When the native
+    taxonomy and a keyword rule agree on a category, both methods produce a
+    row, so the staging table has to keep only the strongest one.
+    """
+    procedure = _read(SQL_ROOT / "04_categorization" / "02_categorize_batch.sql")
+    assert "PARTITION BY OUTPUT_BK, CATEGORY_KEY" in procedure, (
+        "the categorization must pick one row per output and category"
+    )
+    assert "CATEGORY_PICK = 1" in procedure, (
+        "the weaker duplicate for a category must be dropped"
+    )
+    dq = _read(SQL_ROOT / "08_audit_dq" / "02_run_dq.sql")
+    assert "FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY" in dq, (
+        "the duplicate grain check must cover the category bridge"
+    )
+
+
 def test_dq_skips_ingestion_rules_when_a_batch_is_republished() -> None:
     """A re-categorization run must not fail the ingestion reconciliation.
 
