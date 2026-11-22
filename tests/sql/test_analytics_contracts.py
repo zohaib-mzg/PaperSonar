@@ -154,7 +154,7 @@ def test_metric_catalogue_documents_every_question() -> None:
 
 def test_taxonomy_contract_is_valid_yaml() -> None:
     config = yaml.safe_load(_read(PROJECT_ROOT / "config" / "taxonomy.yml"))
-    assert config["taxonomy_version"] == "v2"
+    assert config["taxonomy_version"] == "v3"
     assert len(config["categories"]) >= 60
     assert len(config["rules"]) >= 150
     assert len(config.get("source_mappings", [])) >= 100

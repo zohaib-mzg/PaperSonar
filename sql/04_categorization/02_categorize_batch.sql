@@ -11,13 +11,23 @@
 -- Parameters: None.
 -- Cost: Title/rule cross join is bounded by outputs touched by one batch.
 -- =============================================================================
--- Short patterns (<= 4 characters) require token boundaries so "rag" does not
--- match "storage". Patterns are normalized with the same title normalizer used
--- for silver, so punctuation differences do not change the score.
+-- Native taxonomy values are read as structured parts: the topic display name,
+-- the OpenAlex domain, subfield and field names, and the plain source value
+-- for sources that publish a flat string (arXiv category codes, Zenodo
+-- subjects). Every part is a separate candidate value, so the curated
+-- REF_TAXONOMY_MAP can name the value it actually means.
+--
+-- Matching is boundary aware. A pattern must start on a word boundary, so
+-- "cultural" cannot match "agricultural" and "art" cannot match "plant".
+-- Patterns of four characters or fewer must match a whole word; longer
+-- patterns match a word-initial stem.
 --
 -- Ranking order: operator override (1000) > native source taxonomy match >
 -- keyword/topic score > unclassified default. A native taxonomy value is a
--- curated label supplied by the source, so it outranks a keyword hit.
+-- curated label supplied by the source, so it outranks a keyword hit. Within
+-- the native taxonomy method the most specific part wins: a topic display name
+-- outranks a subfield, a subfield outranks a field, and a field outranks a
+-- domain.
 
 CREATE OR REPLACE PROCEDURE PAPERSONAR.PROJECT_STAGING.SP_CATEGORIZE_BATCH()
 RETURNS VARCHAR
@@ -90,24 +100,42 @@ BEGIN
       ON k.FIELD_NAME = 'title'
      AND (
        (LENGTH(k.PATTERN) <= 4 AND CONTAINS(' ' || s.TITLE_NORMALIZED || ' ', ' ' || k.PATTERN || ' '))
-       OR (LENGTH(k.PATTERN) > 4 AND CONTAINS(s.TITLE_NORMALIZED, k.PATTERN))
+       OR (LENGTH(k.PATTERN) > 4 AND CONTAINS(' ' || s.TITLE_NORMALIZED || ' ', ' ' || k.PATTERN))
      )
     GROUP BY s.OUTPUT_BK, k.CATEGORY_KEY
   ),
-  topic_tokens AS (
+  topic_parts AS (
     SELECT
       s.OUTPUT_BK,
       s.SOURCE_NAME,
-      LOWER(
-        COALESCE(
-          t.value:name::STRING,
-          t.value:subject::STRING,
-          t.value::STRING,
-          ''
-        )
-      ) AS TOKEN
+      part.value:level::NUMBER AS LEVEL,
+      part.value:value::STRING AS RAW_VALUE
     FROM src s,
-    LATERAL FLATTEN(input => s.TOPICS) t
+      LATERAL FLATTEN(input => s.TOPICS) t,
+      LATERAL FLATTEN(
+        input => ARRAY_COMPACT([
+          IFF(t.value:display_name::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 4, 'value', t.value:display_name::STRING), NULL),
+          IFF(t.value:subfield:display_name::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 3, 'value', t.value:subfield:display_name::STRING), NULL),
+          IFF(t.value:field:display_name::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 2, 'value', t.value:field:display_name::STRING), NULL),
+          IFF(t.value:domain:display_name::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 1, 'value', t.value:domain:display_name::STRING), NULL),
+          IFF(t.value:display_name::STRING IS NULL,
+              OBJECT_CONSTRUCT('level', 0, 'value', t.value::STRING), NULL)
+        ])
+      ) part
+  ),
+  topic_tokens AS (
+    SELECT
+      tp.OUTPUT_BK,
+      tp.SOURCE_NAME,
+      LOWER(TRIM(tp.RAW_VALUE)) AS TOKEN,
+      PAPERSONAR.PROJECT_SILVER.FN_NORMALIZE_TITLE(tp.RAW_VALUE) AS NORMALIZED_TOKEN,
+      tp.LEVEL
+    FROM topic_parts tp
+    WHERE PAPERSONAR.PROJECT_SILVER.FN_NORMALIZE_TITLE(tp.RAW_VALUE) IS NOT NULL
   ),
   topic_matches AS (
     SELECT
@@ -118,8 +146,8 @@ BEGIN
     JOIN rules k
       ON k.FIELD_NAME = 'keywords'
      AND (
-       (LENGTH(k.PATTERN) <= 4 AND CONTAINS(' ' || tt.TOKEN || ' ', ' ' || k.PATTERN || ' '))
-       OR (LENGTH(k.PATTERN) > 4 AND CONTAINS(tt.TOKEN, k.PATTERN))
+       (LENGTH(k.PATTERN) <= 4 AND CONTAINS(' ' || tt.NORMALIZED_TOKEN || ' ', ' ' || k.PATTERN || ' '))
+       OR (LENGTH(k.PATTERN) > 4 AND CONTAINS(' ' || tt.NORMALIZED_TOKEN || ' ', ' ' || k.PATTERN))
      )
     GROUP BY tt.OUTPUT_BK, k.CATEGORY_KEY
   ),
@@ -127,7 +155,7 @@ BEGIN
     SELECT
       tt.OUTPUT_BK,
       m.CATEGORY_KEY,
-      SUM(m.BASE_WEIGHT * 2) AS SCORE
+      MAX(m.BASE_WEIGHT * 2 + tt.LEVEL) AS SCORE
     FROM topic_tokens tt
     JOIN (
       SELECT SOURCE_NAME,

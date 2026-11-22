@@ -434,9 +434,99 @@ def test_categorization_ranks_native_taxonomy_above_keywords() -> None:
     assert "'KEYWORD', 2" in procedure, (
         "keyword matches must rank below native taxonomy matches"
     )
-    assert "LENGTH(k.PATTERN) <= 4 AND CONTAINS(' ' || tt.TOKEN || ' '" in procedure, (
+    assert "LENGTH(k.PATTERN) <= 4 AND CONTAINS(' ' || tt.NORMALIZED_TOKEN || ' '" in procedure, (
         "short keyword patterns must match on token boundaries"
     )
+    assert "CONTAINS(s.TITLE_NORMALIZED, k.PATTERN)" not in procedure, (
+        "title patterns must not match inside a longer word"
+    )
+    assert "CONTAINS(tt.TOKEN, k.PATTERN)" not in procedure, (
+        "keyword patterns must not match inside a longer word"
+    )
+    assert "t.value:display_name::STRING" in procedure, (
+        "the native taxonomy topic name must be read as a structured value"
+    )
+    assert "t.value:subfield:display_name::STRING" in procedure, (
+        "the native taxonomy subfield must be read as a structured value"
+    )
+    assert "MAX(m.BASE_WEIGHT * 2 + tt.LEVEL)" in procedure, (
+        "the most specific native taxonomy value must win"
+    )
+
+
+def test_taxonomy_patterns_are_whole_words_or_phrases() -> None:
+    """Patterns must be normalized words or phrases.
+
+    The categorization procedure matches on word boundaries, so a pattern with
+    punctuation or an empty word would never fire or would match unpredictably.
+    """
+    config = _taxonomy_config()
+    for rule in config["rules"]:
+        pattern = rule["pattern"].strip().lower()
+        assert pattern, "a taxonomy rule must carry a pattern"
+        for word in pattern.split():
+            assert re.fullmatch(r"[a-z0-9]+", word), (
+                f"pattern {pattern!r} is not a normalized word or phrase"
+            )
+
+
+def test_taxonomy_seed_deactivates_superseded_rows() -> None:
+    """A new taxonomy version must retire the rules it replaced.
+
+    The seed MERGEs by surrogate key, so rows that exist only in the previous
+    contract would stay active and keep firing. The seed therefore deactivates
+    every row whose version is not the current one.
+    """
+    config = _taxonomy_config()
+    seed = _read(SQL_ROOT / "04_categorization" / "01_seed_taxonomy.sql")
+    version = config["taxonomy_version"]
+    assert (
+        "UPDATE PAPERSONAR.PROJECT_REF.REF_CATEGORY_KEYWORD\n"
+        "SET IS_ACTIVE = FALSE\n"
+        f"WHERE RULE_VERSION IS DISTINCT FROM '{version}';"
+    ) in seed
+    assert (
+        "UPDATE PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP\n"
+        "SET IS_ACTIVE = FALSE\n"
+        f"WHERE MAPPING_VERSION IS DISTINCT FROM '{version}';"
+    ) in seed
+    assert (
+        "UPDATE PAPERSONAR.PROJECT_REF.REF_CATEGORY\n"
+        "SET IS_ACTIVE = FALSE\n"
+        f"WHERE TAXONOMY_VERSION IS DISTINCT FROM '{version}';"
+    ) in seed
+
+
+def test_boundary_matching_separates_lookalike_words() -> None:
+    """The matching semantics must keep lookalike words apart.
+
+    The v2 taxonomy matched substrings, so "cultural" fired on "agricultural
+    and biological sciences" and "art" fired on "plant science". The v3
+    contract matches on word boundaries, and this test pins that behaviour.
+    """
+    config = _taxonomy_config()
+    patterns = {
+        (rule["field"], rule["pattern"].lower()): rule["category"]
+        for rule in config["rules"]
+    }
+
+    def matches(field: str, text: str, pattern: str) -> bool:
+        padded = f" {text} "
+        needle = f" {pattern}"
+        if len(pattern) <= 4:
+            return f"{pattern} " in padded
+        return needle in padded
+
+    assert ("keywords", "cultural") in patterns
+    assert not matches("keywords", "agricultural and biological sciences", "cultural")
+    assert ("keywords", "arts") in patterns
+    assert not matches("keywords", "plant science", "arts")
+    assert matches("keywords", "plant ecology studies", "plant ecology")
+    assert matches("keywords", "deep machine learning models", "machine learning")
+    assert matches("keywords", "storage systems", "storage")
+    assert not matches("keywords", "storage systems", "rag")
+    assert matches("title", "a study of machine learning systems", "machine learning")
+    assert not matches("title", "a study of storage systems", "rag")
 
 
 def test_taxonomy_contract_covers_the_research_domains() -> None:

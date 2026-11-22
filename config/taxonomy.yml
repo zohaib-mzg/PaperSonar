@@ -1,1381 +1,4116 @@
-# PaperSonar Phase 3 taxonomy contract (version 2).
-# ---------------------------------------------------------------------------
-# The authoritative seed lives in sql/04_categorization/01_seed_taxonomy.sql.
-# tests/sql/test_config_contracts.py fails when this file and the SQL seed
-# drift apart. Cortex is OFF by default; no category depends on it.
-#
-# Version 2 (Phase 3 WP1) changes three things:
-#   1. the category tree is widened from a software-engineering-only spine to
-#      the eight broad research domains that the published corpus actually
-#      contains, so that "topic" is a usable analytical dimension;
-#   2. rules may match native source taxonomy values (field: keywords), which
-#      is where OpenAlex topics, DataCite subjects, Crossref subjects, Zenodo
-#      subjects and arXiv category codes arrive;
-#   3. source_mappings pins native taxonomy values that must land on an exact
-#      category (seeded into PROJECT_REF.REF_TAXONOMY_MAP).
-# ---------------------------------------------------------------------------
-taxonomy_version: "v2"
-
+taxonomy_version: v3
 categories:
-  - key: "computer-science"
-    label: "Computer Science"
-    parent: null
-  - key: "ai-ml"
-    label: "Artificial Intelligence and Machine Learning"
-    parent: "computer-science"
-  - key: "llm"
-    label: "Large Language Models"
-    parent: "ai-ml"
-  - key: "rag"
-    label: "Retrieval-Augmented Generation"
-    parent: "llm"
-  - key: "ai-agents"
-    label: "AI Agents"
-    parent: "llm"
-  - key: "code-generation"
-    label: "Code Generation"
-    parent: "ai-ml"
-  - key: "program-repair"
-    label: "Program Repair"
-    parent: "software-engineering"
-  - key: "software-testing"
-    label: "Software Testing"
-    parent: "software-engineering"
-  - key: "software-maintenance"
-    label: "Software Maintenance"
-    parent: "software-engineering"
-  - key: "program-analysis"
-    label: "Program Analysis"
-    parent: "software-engineering"
-  - key: "developer-tools"
-    label: "Developer Tools"
-    parent: "software-engineering"
-  - key: "mlops"
-    label: "MLOps"
-    parent: "software-engineering"
-  - key: "data-engineering"
-    label: "Data Engineering"
-    parent: "software-engineering"
-  - key: "databases"
-    label: "Databases"
-    parent: "software-engineering"
-  - key: "security-privacy"
-    label: "Security and Privacy"
-    parent: "software-engineering"
-  - key: "requirements-engineering"
-    label: "Requirements Engineering"
-    parent: "software-engineering"
-  - key: "software-architecture"
-    label: "Software Architecture"
-    parent: "software-engineering"
-  - key: "empirical-software-engineering"
-    label: "Empirical Software Engineering"
-    parent: "software-engineering"
-  - key: "human-computer-interaction"
-    label: "Human-Computer Interaction"
-    parent: "software-engineering"
-  - key: "distributed-systems"
-    label: "Distributed Systems"
-    parent: "software-engineering"
-  - key: "software-engineering"
-    label: "Software Engineering"
-    parent: "computer-science"
-  - key: "health-sciences"
-    label: "Health Sciences"
-    parent: null
-  - key: "public-health"
-    label: "Public Health"
-    parent: "health-sciences"
-  - key: "clinical-medicine"
-    label: "Clinical Medicine"
-    parent: "health-sciences"
-  - key: "mental-health"
-    label: "Mental Health"
-    parent: "health-sciences"
-  - key: "epidemiology"
-    label: "Epidemiology"
-    parent: "health-sciences"
-  - key: "life-sciences"
-    label: "Life Sciences"
-    parent: null
-  - key: "genetics"
-    label: "Genetics and Genomics"
-    parent: "life-sciences"
-  - key: "microbiology"
-    label: "Microbiology"
-    parent: "life-sciences"
-  - key: "ecology"
-    label: "Ecology"
-    parent: "life-sciences"
-  - key: "neuroscience"
-    label: "Neuroscience"
-    parent: "life-sciences"
-  - key: "natural-sciences"
-    label: "Natural Sciences"
-    parent: null
-  - key: "physics"
-    label: "Physics"
-    parent: "natural-sciences"
-  - key: "astronomy"
-    label: "Astronomy and Astrophysics"
-    parent: "natural-sciences"
-  - key: "chemistry"
-    label: "Chemistry"
-    parent: "natural-sciences"
-  - key: "mathematics"
-    label: "Mathematics"
-    parent: "natural-sciences"
-  - key: "statistics"
-    label: "Statistics and Probability"
-    parent: "natural-sciences"
-  - key: "earth-and-environment"
-    label: "Earth and Environmental Sciences"
-    parent: null
-  - key: "climate-science"
-    label: "Climate Science"
-    parent: "earth-and-environment"
-  - key: "environmental-science"
-    label: "Environmental Science"
-    parent: "earth-and-environment"
-  - key: "geosciences"
-    label: "Geosciences"
-    parent: "earth-and-environment"
-  - key: "oceanography"
-    label: "Oceanography"
-    parent: "earth-and-environment"
-  - key: "engineering-and-technology"
-    label: "Engineering and Technology"
-    parent: null
-  - key: "materials-science"
-    label: "Materials Science"
-    parent: "engineering-and-technology"
-  - key: "energy-engineering"
-    label: "Energy Engineering"
-    parent: "engineering-and-technology"
-  - key: "biomedical-engineering"
-    label: "Biomedical Engineering"
-    parent: "engineering-and-technology"
-  - key: "civil-engineering"
-    label: "Civil and Mechanical Engineering"
-    parent: "engineering-and-technology"
-  - key: "chemical-engineering"
-    label: "Chemical Engineering"
-    parent: "engineering-and-technology"
-  - key: "social-sciences"
-    label: "Social Sciences"
-    parent: null
-  - key: "economics"
-    label: "Economics and Finance"
-    parent: "social-sciences"
-  - key: "management"
-    label: "Management and Business"
-    parent: "social-sciences"
-  - key: "sociology"
-    label: "Sociology"
-    parent: "social-sciences"
-  - key: "political-science"
-    label: "Political Science"
-    parent: "social-sciences"
-  - key: "psychology"
-    label: "Psychology"
-    parent: "social-sciences"
-  - key: "education"
-    label: "Education"
-    parent: "social-sciences"
-  - key: "humanities"
-    label: "Humanities"
-    parent: null
-  - key: "history"
-    label: "History"
-    parent: "humanities"
-  - key: "philosophy"
-    label: "Philosophy"
-    parent: "humanities"
-  - key: "linguistics"
-    label: "Linguistics"
-    parent: "humanities"
-  - key: "literature"
-    label: "Literature"
-    parent: "humanities"
-  - key: "law"
-    label: "Law"
-    parent: "humanities"
-  - key: "arts-and-culture"
-    label: "Arts and Culture"
-    parent: null
-  - key: "unclassified"
-    label: "Unclassified"
-    parent: null
-
-# Weighted keyword rules: title weight x3, topic/keyword weight x2, abstract x1.
-# Negative/context guards are applied in SQL before a rule contributes.
-# Short patterns (<= 4 characters) only match on token boundaries.
+- key: computer-science
+  label: Computer Science
+  parent: null
+- key: ai-ml
+  label: Artificial Intelligence and Machine Learning
+  parent: computer-science
+- key: llm
+  label: Large Language Models
+  parent: ai-ml
+- key: rag
+  label: Retrieval-Augmented Generation
+  parent: llm
+- key: ai-agents
+  label: AI Agents
+  parent: llm
+- key: code-generation
+  label: Code Generation
+  parent: ai-ml
+- key: program-repair
+  label: Program Repair
+  parent: software-engineering
+- key: software-testing
+  label: Software Testing
+  parent: software-engineering
+- key: software-maintenance
+  label: Software Maintenance
+  parent: software-engineering
+- key: program-analysis
+  label: Program Analysis
+  parent: software-engineering
+- key: developer-tools
+  label: Developer Tools
+  parent: software-engineering
+- key: mlops
+  label: MLOps
+  parent: software-engineering
+- key: data-engineering
+  label: Data Engineering
+  parent: software-engineering
+- key: databases
+  label: Databases
+  parent: software-engineering
+- key: security-privacy
+  label: Security and Privacy
+  parent: software-engineering
+- key: requirements-engineering
+  label: Requirements Engineering
+  parent: software-engineering
+- key: software-architecture
+  label: Software Architecture
+  parent: software-engineering
+- key: empirical-software-engineering
+  label: Empirical Software Engineering
+  parent: software-engineering
+- key: human-computer-interaction
+  label: Human-Computer Interaction
+  parent: software-engineering
+- key: distributed-systems
+  label: Distributed Systems
+  parent: software-engineering
+- key: software-engineering
+  label: Software Engineering
+  parent: computer-science
+- key: health-sciences
+  label: Health Sciences
+  parent: null
+- key: public-health
+  label: Public Health
+  parent: health-sciences
+- key: clinical-medicine
+  label: Clinical Medicine
+  parent: health-sciences
+- key: mental-health
+  label: Mental Health
+  parent: health-sciences
+- key: epidemiology
+  label: Epidemiology
+  parent: health-sciences
+- key: life-sciences
+  label: Life Sciences
+  parent: null
+- key: genetics
+  label: Genetics and Genomics
+  parent: life-sciences
+- key: microbiology
+  label: Microbiology
+  parent: life-sciences
+- key: ecology
+  label: Ecology
+  parent: life-sciences
+- key: neuroscience
+  label: Neuroscience
+  parent: life-sciences
+- key: natural-sciences
+  label: Natural Sciences
+  parent: null
+- key: physics
+  label: Physics
+  parent: natural-sciences
+- key: astronomy
+  label: Astronomy and Astrophysics
+  parent: natural-sciences
+- key: chemistry
+  label: Chemistry
+  parent: natural-sciences
+- key: mathematics
+  label: Mathematics
+  parent: natural-sciences
+- key: statistics
+  label: Statistics and Probability
+  parent: natural-sciences
+- key: earth-and-environment
+  label: Earth and Environmental Sciences
+  parent: null
+- key: climate-science
+  label: Climate Science
+  parent: earth-and-environment
+- key: environmental-science
+  label: Environmental Science
+  parent: earth-and-environment
+- key: geosciences
+  label: Geosciences
+  parent: earth-and-environment
+- key: oceanography
+  label: Oceanography
+  parent: earth-and-environment
+- key: engineering-and-technology
+  label: Engineering and Technology
+  parent: null
+- key: materials-science
+  label: Materials Science
+  parent: engineering-and-technology
+- key: energy-engineering
+  label: Energy Engineering
+  parent: engineering-and-technology
+- key: biomedical-engineering
+  label: Biomedical Engineering
+  parent: engineering-and-technology
+- key: civil-engineering
+  label: Civil and Mechanical Engineering
+  parent: engineering-and-technology
+- key: chemical-engineering
+  label: Chemical Engineering
+  parent: engineering-and-technology
+- key: social-sciences
+  label: Social Sciences
+  parent: null
+- key: economics
+  label: Economics and Finance
+  parent: social-sciences
+- key: management
+  label: Management and Business
+  parent: social-sciences
+- key: sociology
+  label: Sociology
+  parent: social-sciences
+- key: political-science
+  label: Political Science
+  parent: social-sciences
+- key: psychology
+  label: Psychology
+  parent: social-sciences
+- key: education
+  label: Education
+  parent: social-sciences
+- key: humanities
+  label: Humanities
+  parent: null
+- key: history
+  label: History
+  parent: humanities
+- key: philosophy
+  label: Philosophy
+  parent: humanities
+- key: linguistics
+  label: Linguistics
+  parent: humanities
+- key: literature
+  label: Literature
+  parent: humanities
+- key: law
+  label: Law
+  parent: humanities
+- key: arts-and-culture
+  label: Arts and Culture
+  parent: null
+- key: unclassified
+  label: Unclassified
+  parent: null
+- key: botany
+  label: Botany and Plant Science
+  parent: life-sciences
+- key: entomology
+  label: Entomology
+  parent: life-sciences
+- key: formal-methods
+  label: Formal Methods and Verification
+  parent: software-engineering
+- key: research-methods
+  label: Research Methods and Reproducibility
+  parent: social-sciences
 rules:
-  - category: "rag"
-    pattern: "retrieval augmented generation"
-    field: title
-  - category: "rag"
-    pattern: "retrieval-augmented generation"
-    field: title
-  - category: "rag"
-    pattern: "rag"
-    field: title
-    guard: "acronym"
-  - category: "llm"
-    pattern: "large language model"
-    field: title
-  - category: "llm"
-    pattern: "llm"
-    field: title
-    guard: "acronym"
-  - category: "ai-agents"
-    pattern: "ai agent"
-    field: title
-  - category: "ai-agents"
-    pattern: "agentic"
-    field: title
-  - category: "code-generation"
-    pattern: "code generation"
-    field: title
-  - category: "code-generation"
-    pattern: "code completion"
-    field: title
-  - category: "program-repair"
-    pattern: "program repair"
-    field: title
-  - category: "program-repair"
-    pattern: "automated repair"
-    field: title
-  - category: "software-testing"
-    pattern: "software testing"
-    field: title
-  - category: "software-testing"
-    pattern: "test generation"
-    field: title
-  - category: "software-testing"
-    pattern: "mutation testing"
-    field: title
-  - category: "software-maintenance"
-    pattern: "software maintenance"
-    field: title
-  - category: "software-maintenance"
-    pattern: "code refactoring"
-    field: title
-  - category: "program-analysis"
-    pattern: "program analysis"
-    field: title
-  - category: "program-analysis"
-    pattern: "static analysis"
-    field: title
-  - category: "developer-tools"
-    pattern: "developer tool"
-    field: title
-  - category: "developer-tools"
-    pattern: "ide"
-    field: keywords
-    guard: "acronym"
-  - category: "mlops"
-    pattern: "mlops"
-    field: title
-  - category: "mlops"
-    pattern: "machine learning operations"
-    field: title
-  - category: "data-engineering"
-    pattern: "data pipeline"
-    field: title
-  - category: "data-engineering"
-    pattern: "data engineering"
-    field: title
-  - category: "data-engineering"
-    pattern: "etl"
-    field: keywords
-    guard: "acronym"
-  - category: "databases"
-    pattern: "database"
-    field: title
-  - category: "databases"
-    pattern: "query optimization"
-    field: title
-  - category: "security-privacy"
-    pattern: "vulnerability"
-    field: title
-  - category: "security-privacy"
-    pattern: "privacy"
-    field: title
-  - category: "requirements-engineering"
-    pattern: "requirements engineering"
-    field: title
-  - category: "software-architecture"
-    pattern: "software architecture"
-    field: title
-  - category: "software-architecture"
-    pattern: "microservice"
-    field: title
-  - category: "empirical-software-engineering"
-    pattern: "empirical study"
-    field: title
-  - category: "human-computer-interaction"
-    pattern: "human computer interaction"
-    field: title
-  - category: "human-computer-interaction"
-    pattern: "usability"
-    field: title
-  - category: "distributed-systems"
-    pattern: "distributed system"
-    field: title
-  - category: "distributed-systems"
-    pattern: "consensus"
-    field: title
-  # Native taxonomy values: computer science and AI -------------------------
-  - category: "computer-science"
-    pattern: "computer science"
-    field: keywords
-    weight: 1.2
-  - category: "computer-science"
-    pattern: "computing"
-    field: keywords
-  - category: "computer-science"
-    pattern: "information technology"
-    field: keywords
-  - category: "ai-ml"
-    pattern: "machine learning"
-    field: keywords
-    weight: 1.5
-  - category: "ai-ml"
-    pattern: "artificial intelligence"
-    field: keywords
-  - category: "ai-ml"
-    pattern: "deep learning"
-    field: keywords
-    weight: 1.5
-  - category: "ai-ml"
-    pattern: "neural network"
-    field: keywords
-    weight: 1.5
-  - category: "ai-ml"
-    pattern: "natural language processing"
-    field: keywords
-  - category: "ai-ml"
-    pattern: "computer vision"
-    field: keywords
-  - category: "ai-ml"
-    pattern: "reinforcement learning"
-    field: keywords
-  - category: "ai-ml"
-    pattern: "generative ai"
-    field: keywords
-  - category: "ai-ml"
-    pattern: "generative artificial intelligence"
-    field: keywords
-  - category: "llm"
-    pattern: "large language model"
-    field: keywords
-    weight: 1.5
-  - category: "software-engineering"
-    pattern: "software engineering"
-    field: keywords
-    weight: 1.5
-  - category: "software-engineering"
-    pattern: "programming language"
-    field: keywords
-  - category: "software-engineering"
-    pattern: "program analysis"
-    field: keywords
-  - category: "software-engineering"
-    pattern: "software testing"
-    field: keywords
-  - category: "software-testing"
-    pattern: "test generation"
-    field: keywords
-  - category: "databases"
-    pattern: "database"
-    field: keywords
-  - category: "databases"
-    pattern: "query processing"
-    field: keywords
-  - category: "data-engineering"
-    pattern: "data mining"
-    field: keywords
-  - category: "data-engineering"
-    pattern: "data management"
-    field: keywords
-  - category: "data-engineering"
-    pattern: "information system"
-    field: keywords
-  - category: "data-engineering"
-    pattern: "business intelligence"
-    field: keywords
-  - category: "distributed-systems"
-    pattern: "distributed system"
-    field: keywords
-  - category: "distributed-systems"
-    pattern: "cloud computing"
-    field: keywords
-  - category: "distributed-systems"
-    pattern: "parallel computing"
-    field: keywords
-  - category: "distributed-systems"
-    pattern: "high performance computing"
-    field: keywords
-  - category: "security-privacy"
-    pattern: "security"
-    field: keywords
-  - category: "security-privacy"
-    pattern: "cryptograph"
-    field: keywords
-  - category: "security-privacy"
-    pattern: "cyber"
-    field: keywords
-  - category: "security-privacy"
-    pattern: "malware"
-    field: keywords
-  - category: "security-privacy"
-    pattern: "vulnerability"
-    field: keywords
-  - category: "human-computer-interaction"
-    pattern: "human computer interaction"
-    field: keywords
-  - category: "human-computer-interaction"
-    pattern: "user interface"
-    field: keywords
-  - category: "human-computer-interaction"
-    pattern: "usability"
-    field: keywords
-  - category: "human-computer-interaction"
-    pattern: "virtual reality"
-    field: keywords
-  - category: "human-computer-interaction"
-    pattern: "human robot interaction"
-    field: keywords
-  # Native taxonomy values: health and life sciences ------------------------
-  - category: "health-sciences"
-    pattern: "health"
-    field: keywords
-  - category: "health-sciences"
-    pattern: "medicine"
-    field: keywords
-  - category: "health-sciences"
-    pattern: "disease"
-    field: keywords
-  - category: "health-sciences"
-    pattern: "cancer"
-    field: keywords
-  - category: "health-sciences"
-    pattern: "nutrition"
-    field: keywords
-  - category: "health-sciences"
-    pattern: "obesity"
-    field: keywords
-  - category: "public-health"
-    pattern: "public health"
-    field: keywords
-    weight: 1.5
-  - category: "public-health"
-    pattern: "health policy"
-    field: keywords
-  - category: "public-health"
-    pattern: "healthcare"
-    field: keywords
-    weight: 1.5
-  - category: "clinical-medicine"
-    pattern: "clinical"
-    field: keywords
-  - category: "clinical-medicine"
-    pattern: "surgery"
-    field: keywords
-  - category: "clinical-medicine"
-    pattern: "patient"
-    field: keywords
-  - category: "clinical-medicine"
-    pattern: "diagnos"
-    field: keywords
-  - category: "clinical-medicine"
-    pattern: "therapy"
-    field: keywords
-  - category: "mental-health"
-    pattern: "mental health"
-    field: keywords
-  - category: "mental-health"
-    pattern: "psychiatr"
-    field: keywords
-  - category: "mental-health"
-    pattern: "depression"
-    field: keywords
-  - category: "epidemiology"
-    pattern: "epidemiolog"
-    field: keywords
-  - category: "epidemiology"
-    pattern: "pandemic"
-    field: keywords
-  - category: "epidemiology"
-    pattern: "outbreak"
-    field: keywords
-  - category: "epidemiology"
-    pattern: "vaccin"
-    field: keywords
-  - category: "genetics"
-    pattern: "genetic"
-    field: keywords
-  - category: "genetics"
-    pattern: "genomic"
-    field: keywords
-  - category: "genetics"
-    pattern: "gene"
-    field: keywords
-    guard: "acronym"
-  - category: "genetics"
-    pattern: "dna"
-    field: keywords
-    guard: "acronym"
-  - category: "genetics"
-    pattern: "rna"
-    field: keywords
-    guard: "acronym"
-  - category: "genetics"
-    pattern: "proteom"
-    field: keywords
-  - category: "microbiology"
-    pattern: "microbiolog"
-    field: keywords
-  - category: "microbiology"
-    pattern: "bacteri"
-    field: keywords
-  - category: "microbiology"
-    pattern: "virolog"
-    field: keywords
-  - category: "microbiology"
-    pattern: "virus"
-    field: keywords
-  - category: "microbiology"
-    pattern: "immunolog"
-    field: keywords
-  - category: "ecology"
-    pattern: "ecolog"
-    field: keywords
-  - category: "ecology"
-    pattern: "species"
-    field: keywords
-  - category: "ecology"
-    pattern: "ecosystem"
-    field: keywords
-  - category: "ecology"
-    pattern: "biodiversity"
-    field: keywords
-  - category: "ecology"
-    pattern: "conservation"
-    field: keywords
-  - category: "neuroscience"
-    pattern: "neuroscien"
-    field: keywords
-  - category: "neuroscience"
-    pattern: "cognitive"
-    field: keywords
-  - category: "neuroscience"
-    pattern: "brain"
-    field: keywords
-  # Native taxonomy values: natural sciences --------------------------------
-  - category: "physics"
-    pattern: "physics"
-    field: keywords
-  - category: "physics"
-    pattern: "quantum"
-    field: keywords
-  - category: "physics"
-    pattern: "particle"
-    field: keywords
-  - category: "physics"
-    pattern: "cosmolog"
-    field: keywords
-  - category: "physics"
-    pattern: "nuclear"
-    field: keywords
-  - category: "astronomy"
-    pattern: "astronom"
-    field: keywords
-  - category: "astronomy"
-    pattern: "astrophys"
-    field: keywords
-  - category: "astronomy"
-    pattern: "galax"
-    field: keywords
-  - category: "astronomy"
-    pattern: "telescope"
-    field: keywords
-  - category: "astronomy"
-    pattern: "star formation"
-    field: keywords
-  - category: "chemistry"
-    pattern: "chemistry"
-    field: keywords
-  - category: "chemistry"
-    pattern: "chemical"
-    field: keywords
-  - category: "chemistry"
-    pattern: "catalys"
-    field: keywords
-  - category: "chemistry"
-    pattern: "spectroscop"
-    field: keywords
-  - category: "chemistry"
-    pattern: "polymer"
-    field: keywords
-  - category: "chemistry"
-    pattern: "crystal"
-    field: keywords
-  - category: "chemistry"
-    pattern: "organic synthesis"
-    field: keywords
-  - category: "mathematics"
-    pattern: "mathemat"
-    field: keywords
-  - category: "mathematics"
-    pattern: "algebra"
-    field: keywords
-  - category: "mathematics"
-    pattern: "geometry"
-    field: keywords
-  - category: "mathematics"
-    pattern: "topolog"
-    field: keywords
-  - category: "mathematics"
-    pattern: "differential equation"
-    field: keywords
-  - category: "statistics"
-    pattern: "statistic"
-    field: keywords
-  - category: "statistics"
-    pattern: "probability"
-    field: keywords
-  - category: "statistics"
-    pattern: "regression"
-    field: keywords
-  - category: "statistics"
-    pattern: "bayesian"
-    field: keywords
-  # Native taxonomy values: earth and environment ----------------------------
-  - category: "climate-science"
-    pattern: "climate"
-    field: keywords
-  - category: "climate-science"
-    pattern: "atmosphere"
-    field: keywords
-  - category: "climate-science"
-    pattern: "greenhouse gas"
-    field: keywords
-  - category: "environmental-science"
-    pattern: "environment"
-    field: keywords
-  - category: "environmental-science"
-    pattern: "pollution"
-    field: keywords
-  - category: "environmental-science"
-    pattern: "sustainab"
-    field: keywords
-  - category: "environmental-science"
-    pattern: "water quality"
-    field: keywords
-  - category: "environmental-science"
-    pattern: "soil"
-    field: keywords
-  - category: "environmental-science"
-    pattern: "remote sensing"
-    field: keywords
-  - category: "geosciences"
-    pattern: "geolog"
-    field: keywords
-  - category: "geosciences"
-    pattern: "geoscience"
-    field: keywords
-  - category: "geosciences"
-    pattern: "earthquake"
-    field: keywords
-  - category: "geosciences"
-    pattern: "tectonic"
-    field: keywords
-  - category: "oceanography"
-    pattern: "ocean"
-    field: keywords
-  - category: "oceanography"
-    pattern: "marine"
-    field: keywords
-  - category: "oceanography"
-    pattern: "sea level"
-    field: keywords
-  # Native taxonomy values: engineering and technology -----------------------
-  - category: "materials-science"
-    pattern: "material"
-    field: keywords
-  - category: "materials-science"
-    pattern: "nanotechnolog"
-    field: keywords
-  - category: "materials-science"
-    pattern: "semiconductor"
-    field: keywords
-  - category: "materials-science"
-    pattern: "ceramic"
-    field: keywords
-  - category: "energy-engineering"
-    pattern: "energy"
-    field: keywords
-  - category: "energy-engineering"
-    pattern: "solar"
-    field: keywords
-  - category: "energy-engineering"
-    pattern: "wind power"
-    field: keywords
-  - category: "energy-engineering"
-    pattern: "battery"
-    field: keywords
-  - category: "energy-engineering"
-    pattern: "hydrogen"
-    field: keywords
-  - category: "energy-engineering"
-    pattern: "photovoltaic"
-    field: keywords
-  - category: "biomedical-engineering"
-    pattern: "biomedical"
-    field: keywords
-  - category: "biomedical-engineering"
-    pattern: "medical device"
-    field: keywords
-  - category: "biomedical-engineering"
-    pattern: "tissue engineering"
-    field: keywords
-  - category: "civil-engineering"
-    pattern: "civil engineering"
-    field: keywords
-  - category: "civil-engineering"
-    pattern: "mechanical engineering"
-    field: keywords
-  - category: "civil-engineering"
-    pattern: "construction"
-    field: keywords
-  - category: "civil-engineering"
-    pattern: "transportation"
-    field: keywords
-  - category: "civil-engineering"
-    pattern: "structural engineering"
-    field: keywords
-  - category: "chemical-engineering"
-    pattern: "chemical engineering"
-    field: keywords
-  - category: "chemical-engineering"
-    pattern: "reaction engineering"
-    field: keywords
-  - category: "chemical-engineering"
-    pattern: "separation process"
-    field: keywords
-  # Native taxonomy values: social sciences and humanities -------------------
-  - category: "economics"
-    pattern: "econom"
-    field: keywords
-  - category: "economics"
-    pattern: "finance"
-    field: keywords
-  - category: "economics"
-    pattern: "financial"
-    field: keywords
-    weight: 1.2
-  - category: "economics"
-    pattern: "market"
-    field: keywords
-  - category: "economics"
-    pattern: "supply chain"
-    field: keywords
-  - category: "management"
-    pattern: "management"
-    field: keywords
-  - category: "management"
-    pattern: "business"
-    field: keywords
-  - category: "management"
-    pattern: "marketing"
-    field: keywords
-    weight: 1.5
-  - category: "management"
-    pattern: "organizational"
-    field: keywords
-  - category: "management"
-    pattern: "human resource"
-    field: keywords
-  - category: "sociology"
-    pattern: "sociolog"
-    field: keywords
-  - category: "sociology"
-    pattern: "social science"
-    field: keywords
-  - category: "sociology"
-    pattern: "inequality"
-    field: keywords
-  - category: "sociology"
-    pattern: "demograph"
-    field: keywords
-  - category: "political-science"
-    pattern: "political science"
-    field: keywords
-  - category: "political-science"
-    pattern: "public policy"
-    field: keywords
-  - category: "political-science"
-    pattern: "international relation"
-    field: keywords
-  - category: "political-science"
-    pattern: "election"
-    field: keywords
-  - category: "psychology"
-    pattern: "psycholog"
-    field: keywords
-  - category: "psychology"
-    pattern: "behavior"
-    field: keywords
-  - category: "psychology"
-    pattern: "behaviour"
-    field: keywords
-  - category: "psychology"
-    pattern: "cognitive science"
-    field: keywords
-  - category: "education"
-    pattern: "education"
-    field: keywords
-  - category: "education"
-    pattern: "teaching"
-    field: keywords
-  - category: "education"
-    pattern: "pedagog"
-    field: keywords
-  - category: "history"
-    pattern: "history"
-    field: keywords
-  - category: "history"
-    pattern: "histor"
-    field: keywords
-  - category: "history"
-    pattern: "archaeolog"
-    field: keywords
-  - category: "history"
-    pattern: "heritage"
-    field: keywords
-  - category: "philosophy"
-    pattern: "philosoph"
-    field: keywords
-  - category: "philosophy"
-    pattern: "ethic"
-    field: keywords
-  - category: "linguistics"
-    pattern: "linguistic"
-    field: keywords
-  - category: "linguistics"
-    pattern: "phonetic"
-    field: keywords
-  - category: "linguistics"
-    pattern: "translation"
-    field: keywords
-  - category: "literature"
-    pattern: "literat"
-    field: keywords
-  - category: "literature"
-    pattern: "novel"
-    field: keywords
-  - category: "law"
-    pattern: "law"
-    field: keywords
-  - category: "law"
-    pattern: "legal"
-    field: keywords
-  - category: "law"
-    pattern: "jurisprud"
-    field: keywords
-  - category: "arts-and-culture"
-    pattern: "art"
-    field: keywords
-  - category: "arts-and-culture"
-    pattern: "music"
-    field: keywords
-  - category: "arts-and-culture"
-    pattern: "cultural"
-    field: keywords
-  - category: "arts-and-culture"
-    pattern: "creative"
-    field: keywords
-  # Title-level domain signals ----------------------------------------------
-  - category: "ai-ml"
-    pattern: "machine learning"
-    field: title
-    weight: 1.5
-  - category: "ai-ml"
-    pattern: "deep learning"
-    field: title
-    weight: 1.5
-  - category: "ai-ml"
-    pattern: "neural network"
-    field: title
-    weight: 1.5
-  - category: "ai-ml"
-    pattern: "artificial intelligence"
-    field: title
-  - category: "public-health"
-    pattern: "public health"
-    field: title
-    weight: 1.5
-  - category: "mental-health"
-    pattern: "mental health"
-    field: title
-  - category: "epidemiology"
-    pattern: "pandemic"
-    field: title
-  - category: "epidemiology"
-    pattern: "outbreak"
-    field: title
-  - category: "climate-science"
-    pattern: "climate change"
-    field: title
-    weight: 1.5
-  - category: "climate-science"
-    pattern: "global warming"
-    field: title
-  - category: "environmental-science"
-    pattern: "pollution"
-    field: title
-  - category: "energy-engineering"
-    pattern: "renewable energy"
-    field: title
-  - category: "energy-engineering"
-    pattern: "carbon capture"
-    field: title
-  - category: "energy-engineering"
-    pattern: "solar energy"
-    field: title
-  - category: "security-privacy"
-    pattern: "cybersecurity"
-    field: title
-  - category: "security-privacy"
-    pattern: "misinformation"
-    field: title
-  - category: "security-privacy"
-    pattern: "fake news"
-    field: title
-  - category: "sociology"
-    pattern: "social media"
-    field: title
-  - category: "sociology"
-    pattern: "inequality"
-    field: title
-  - category: "economics"
-    pattern: "economic"
-    field: title
-  - category: "education"
-    pattern: "education"
-    field: title
-  - category: "genetics"
-    pattern: "genome"
-    field: title
-  - category: "genetics"
-    pattern: "gene editing"
-    field: title
-  - category: "microbiology"
-    pattern: "antibiotic"
-    field: title
-  - category: "neuroscience"
-    pattern: "neural"
-    field: title
-  - category: "chemistry"
-    pattern: "catalyst"
-    field: title
-  - category: "physics"
-    pattern: "quantum"
-    field: title
-  - category: "astronomy"
-    pattern: "exoplanet"
-    field: title
-  - category: "astronomy"
-    pattern: "galaxy"
-    field: title
-  - category: "materials-science"
-    pattern: "nanomaterial"
-    field: title
-  - category: "political-science"
-    pattern: "democracy"
-    field: title
-  - category: "management"
-    pattern: "supply chain"
-    field: title
-  - category: "humanities"
-    pattern: "cultural heritage"
-    field: title
-
-# Native source taxonomy values pinned to an exact internal category.
-# Seeded into PROJECT_REF.REF_TAXONOMY_MAP and applied by
-# SP_CATEGORIZE_BATCH with the SOURCE_TAXONOMY method.
+- category: rag
+  pattern: retrieval augmented generation
+  field: title
+  weight: 1.0
+- category: rag
+  pattern: rag
+  field: title
+  weight: 1.0
+- category: llm
+  pattern: large language model
+  field: title
+  weight: 1.0
+- category: llm
+  pattern: large language models
+  field: title
+  weight: 1.0
+- category: llm
+  pattern: llm
+  field: title
+  weight: 1.0
+- category: llm
+  pattern: llms
+  field: title
+  weight: 1.0
+- category: ai-agents
+  pattern: ai agent
+  field: title
+  weight: 1.0
+- category: ai-agents
+  pattern: agentic
+  field: title
+  weight: 1.0
+- category: code-generation
+  pattern: code generation
+  field: title
+  weight: 1.0
+- category: code-generation
+  pattern: code completion
+  field: title
+  weight: 1.0
+- category: program-repair
+  pattern: program repair
+  field: title
+  weight: 1.0
+- category: program-repair
+  pattern: automated repair
+  field: title
+  weight: 1.0
+- category: software-testing
+  pattern: software testing
+  field: title
+  weight: 1.0
+- category: software-testing
+  pattern: test generation
+  field: title
+  weight: 1.0
+- category: software-testing
+  pattern: mutation testing
+  field: title
+  weight: 1.0
+- category: software-maintenance
+  pattern: software maintenance
+  field: title
+  weight: 1.0
+- category: software-maintenance
+  pattern: code refactoring
+  field: title
+  weight: 1.0
+- category: program-analysis
+  pattern: program analysis
+  field: title
+  weight: 1.0
+- category: program-analysis
+  pattern: static analysis
+  field: title
+  weight: 1.0
+- category: developer-tools
+  pattern: developer tool
+  field: title
+  weight: 1.0
+- category: developer-tools
+  pattern: developer tools
+  field: title
+  weight: 1.0
+- category: developer-tools
+  pattern: ide
+  field: keywords
+  weight: 1.0
+- category: mlops
+  pattern: mlops
+  field: title
+  weight: 1.0
+- category: mlops
+  pattern: machine learning operations
+  field: title
+  weight: 1.0
+- category: data-engineering
+  pattern: data pipeline
+  field: title
+  weight: 1.0
+- category: data-engineering
+  pattern: data engineering
+  field: title
+  weight: 1.0
+- category: data-engineering
+  pattern: etl
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: elt
+  field: keywords
+  weight: 1.0
+- category: databases
+  pattern: database
+  field: title
+  weight: 1.0
+- category: databases
+  pattern: databases
+  field: title
+  weight: 1.0
+- category: databases
+  pattern: query optimization
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: vulnerability
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: vulnerabilities
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: privacy
+  field: title
+  weight: 1.0
+- category: requirements-engineering
+  pattern: requirements engineering
+  field: title
+  weight: 1.0
+- category: software-architecture
+  pattern: software architecture
+  field: title
+  weight: 1.0
+- category: software-architecture
+  pattern: microservice
+  field: title
+  weight: 1.0
+- category: software-architecture
+  pattern: microservices
+  field: title
+  weight: 1.0
+- category: empirical-software-engineering
+  pattern: empirical study
+  field: title
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: human computer interaction
+  field: title
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: usability
+  field: title
+  weight: 1.0
+- category: distributed-systems
+  pattern: distributed system
+  field: title
+  weight: 1.0
+- category: distributed-systems
+  pattern: distributed systems
+  field: title
+  weight: 1.0
+- category: distributed-systems
+  pattern: consensus
+  field: title
+  weight: 1.0
+- category: computer-science
+  pattern: computer science
+  field: keywords
+  weight: 1.2
+- category: computer-science
+  pattern: computing
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: information technology
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: machine learning
+  field: keywords
+  weight: 1.5
+- category: ai-ml
+  pattern: artificial intelligence
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: deep learning
+  field: keywords
+  weight: 1.5
+- category: ai-ml
+  pattern: neural network
+  field: keywords
+  weight: 1.5
+- category: ai-ml
+  pattern: neural networks
+  field: keywords
+  weight: 1.5
+- category: ai-ml
+  pattern: natural language processing
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: computer vision
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: reinforcement learning
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: generative ai
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: generative artificial intelligence
+  field: keywords
+  weight: 1.0
+- category: llm
+  pattern: large language model
+  field: keywords
+  weight: 1.5
+- category: llm
+  pattern: large language models
+  field: keywords
+  weight: 1.5
+- category: software-engineering
+  pattern: software engineering
+  field: keywords
+  weight: 1.5
+- category: software-engineering
+  pattern: programming language
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: programming languages
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: program analysis
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: software testing
+  field: keywords
+  weight: 1.0
+- category: software-testing
+  pattern: test generation
+  field: keywords
+  weight: 1.0
+- category: databases
+  pattern: database
+  field: keywords
+  weight: 1.0
+- category: databases
+  pattern: databases
+  field: keywords
+  weight: 1.0
+- category: databases
+  pattern: query processing
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: data mining
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: data management
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: information system
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: information systems
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: business intelligence
+  field: keywords
+  weight: 1.0
+- category: distributed-systems
+  pattern: distributed system
+  field: keywords
+  weight: 1.0
+- category: distributed-systems
+  pattern: distributed systems
+  field: keywords
+  weight: 1.0
+- category: distributed-systems
+  pattern: cloud computing
+  field: keywords
+  weight: 1.0
+- category: distributed-systems
+  pattern: parallel computing
+  field: keywords
+  weight: 1.0
+- category: distributed-systems
+  pattern: high performance computing
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: security
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: cryptography
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: cryptographic
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: cyber
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: cybersecurity
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: malware
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: vulnerability
+  field: keywords
+  weight: 1.0
+- category: security-privacy
+  pattern: vulnerabilities
+  field: keywords
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: human computer interaction
+  field: keywords
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: user interface
+  field: keywords
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: usability
+  field: keywords
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: virtual reality
+  field: keywords
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: human robot interaction
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: health
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: medicine
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: disease
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: diseases
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: cancer
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: nutrition
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: obesity
+  field: keywords
+  weight: 1.0
+- category: public-health
+  pattern: public health
+  field: keywords
+  weight: 1.5
+- category: public-health
+  pattern: health policy
+  field: keywords
+  weight: 1.0
+- category: public-health
+  pattern: healthcare
+  field: keywords
+  weight: 1.5
+- category: clinical-medicine
+  pattern: clinical
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: surgery
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: patient
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: patients
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: diagnosis
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: diagnostic
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: diagnostics
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: therapy
+  field: keywords
+  weight: 1.0
+- category: mental-health
+  pattern: mental health
+  field: keywords
+  weight: 1.0
+- category: mental-health
+  pattern: psychiatry
+  field: keywords
+  weight: 1.0
+- category: mental-health
+  pattern: psychiatric
+  field: keywords
+  weight: 1.0
+- category: mental-health
+  pattern: depression
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: epidemiology
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: epidemiological
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: pandemic
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: pandics
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: outbreak
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: outbreaks
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: vaccine
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: vaccines
+  field: keywords
+  weight: 1.0
+- category: epidemiology
+  pattern: vaccination
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: genetic
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: genomic
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: genomics
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: gene
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: genes
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: dna
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: rna
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: proteome
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: proteomic
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: proteomics
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: microbiology
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: microbiological
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: bacteria
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: bacterial
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: bacterium
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: virology
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: virological
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: virus
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: viral
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: viruses
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: immunology
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: immunological
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: ecology
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: ecological
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: ecologies
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: species
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: specie
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: ecosystem
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: ecosystems
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: biodiversity
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: conservation
+  field: keywords
+  weight: 1.0
+- category: neuroscience
+  pattern: neuroscience
+  field: keywords
+  weight: 1.0
+- category: neuroscience
+  pattern: neuroscientific
+  field: keywords
+  weight: 1.0
+- category: neuroscience
+  pattern: cognitive
+  field: keywords
+  weight: 1.0
+- category: neuroscience
+  pattern: brain
+  field: keywords
+  weight: 1.0
+- category: neuroscience
+  pattern: brains
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: physics
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: quantum
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: particle
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: particles
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: cosmology
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: cosmological
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: nuclear
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: astronom
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: astrophysics
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: astrophysical
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: galaxy
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: galaxies
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: telescope
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: star formation
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: chemistry
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: chemical
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: catalysis
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: catalyst
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: catalytic
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: spectroscopy
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: spectroscopic
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: polymer
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: polymeric
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: polymers
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: crystal
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: crystalline
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: crystals
+  field: keywords
+  weight: 1.0
+- category: chemistry
+  pattern: organic synthesis
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: mathematics
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: mathematical
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: mathematician
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: algebra
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: algebraic
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: geometry
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: geometric
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: topology
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: topological
+  field: keywords
+  weight: 1.0
+- category: mathematics
+  pattern: differential equation
+  field: keywords
+  weight: 1.0
+- category: statistics
+  pattern: statistics
+  field: keywords
+  weight: 1.0
+- category: statistics
+  pattern: statistical
+  field: keywords
+  weight: 1.0
+- category: statistics
+  pattern: statistic
+  field: keywords
+  weight: 1.0
+- category: statistics
+  pattern: statistically
+  field: keywords
+  weight: 1.0
+- category: statistics
+  pattern: probability
+  field: keywords
+  weight: 1.0
+- category: statistics
+  pattern: regression
+  field: keywords
+  weight: 1.0
+- category: statistics
+  pattern: bayesian
+  field: keywords
+  weight: 1.0
+- category: climate-science
+  pattern: climate
+  field: keywords
+  weight: 1.0
+- category: climate-science
+  pattern: atmosphere
+  field: keywords
+  weight: 1.0
+- category: climate-science
+  pattern: atmospheric
+  field: keywords
+  weight: 1.0
+- category: climate-science
+  pattern: greenhouse gas
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: environment
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: environmental
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: environments
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: pollution
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: pollutant
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: polluting
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: sustainability
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: sustainable
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: water quality
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: soil
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: soils
+  field: keywords
+  weight: 1.0
+- category: environmental-science
+  pattern: remote sensing
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: geology
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: geological
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: geologist
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: geoscience
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: earthquake
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: earthquakes
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: tectonic
+  field: keywords
+  weight: 1.0
+- category: oceanography
+  pattern: ocean
+  field: keywords
+  weight: 1.0
+- category: oceanography
+  pattern: oceanic
+  field: keywords
+  weight: 1.0
+- category: oceanography
+  pattern: oceans
+  field: keywords
+  weight: 1.0
+- category: oceanography
+  pattern: marine
+  field: keywords
+  weight: 1.0
+- category: oceanography
+  pattern: sea level
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: material
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: materials
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: nanotechnology
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: nanotechnological
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: semiconductor
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: semiconductors
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: ceramic
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: ceramics
+  field: keywords
+  weight: 1.0
+- category: energy-engineering
+  pattern: energy
+  field: keywords
+  weight: 1.0
+- category: energy-engineering
+  pattern: solar
+  field: keywords
+  weight: 1.0
+- category: energy-engineering
+  pattern: wind power
+  field: keywords
+  weight: 1.0
+- category: energy-engineering
+  pattern: battery
+  field: keywords
+  weight: 1.0
+- category: energy-engineering
+  pattern: batteries
+  field: keywords
+  weight: 1.0
+- category: energy-engineering
+  pattern: hydrogen
+  field: keywords
+  weight: 1.0
+- category: energy-engineering
+  pattern: photovoltaic
+  field: keywords
+  weight: 1.0
+- category: biomedical-engineering
+  pattern: biomedical
+  field: keywords
+  weight: 1.0
+- category: biomedical-engineering
+  pattern: medical device
+  field: keywords
+  weight: 1.0
+- category: biomedical-engineering
+  pattern: tissue engineering
+  field: keywords
+  weight: 1.0
+- category: civil-engineering
+  pattern: civil engineering
+  field: keywords
+  weight: 1.0
+- category: civil-engineering
+  pattern: mechanical engineering
+  field: keywords
+  weight: 1.0
+- category: civil-engineering
+  pattern: construction
+  field: keywords
+  weight: 1.0
+- category: civil-engineering
+  pattern: transportation
+  field: keywords
+  weight: 1.0
+- category: civil-engineering
+  pattern: structural engineering
+  field: keywords
+  weight: 1.0
+- category: chemical-engineering
+  pattern: chemical engineering
+  field: keywords
+  weight: 1.0
+- category: chemical-engineering
+  pattern: reaction engineering
+  field: keywords
+  weight: 1.0
+- category: chemical-engineering
+  pattern: separation process
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: economy
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: economic
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: economics
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: economical
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: finance
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: financial
+  field: keywords
+  weight: 1.2
+- category: economics
+  pattern: market
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: markets
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: supply chain
+  field: keywords
+  weight: 1.0
+- category: management
+  pattern: management
+  field: keywords
+  weight: 1.0
+- category: management
+  pattern: business
+  field: keywords
+  weight: 1.0
+- category: management
+  pattern: businesses
+  field: keywords
+  weight: 1.0
+- category: management
+  pattern: marketing
+  field: keywords
+  weight: 1.5
+- category: management
+  pattern: organizational
+  field: keywords
+  weight: 1.0
+- category: management
+  pattern: human resource
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: sociology
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: sociological
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: sociologist
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: social science
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: inequality
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: demography
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: demographic
+  field: keywords
+  weight: 1.0
+- category: political-science
+  pattern: political science
+  field: keywords
+  weight: 1.0
+- category: political-science
+  pattern: public policy
+  field: keywords
+  weight: 1.0
+- category: political-science
+  pattern: international relation
+  field: keywords
+  weight: 1.0
+- category: political-science
+  pattern: election
+  field: keywords
+  weight: 1.0
+- category: political-science
+  pattern: elections
+  field: keywords
+  weight: 1.0
+- category: psychology
+  pattern: psycholog
+  field: keywords
+  weight: 1.0
+- category: psychology
+  pattern: behavior
+  field: keywords
+  weight: 1.0
+- category: psychology
+  pattern: behavioral
+  field: keywords
+  weight: 1.0
+- category: psychology
+  pattern: behaviour
+  field: keywords
+  weight: 1.0
+- category: psychology
+  pattern: behavioural
+  field: keywords
+  weight: 1.0
+- category: psychology
+  pattern: cognitive science
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: education
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: teaching
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: teacher
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: teachers
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: pedagogy
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: pedagogical
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: pedagogics
+  field: keywords
+  weight: 1.0
+- category: history
+  pattern: history
+  field: keywords
+  weight: 1.0
+- category: history
+  pattern: historical
+  field: keywords
+  weight: 1.0
+- category: history
+  pattern: historian
+  field: keywords
+  weight: 1.0
+- category: history
+  pattern: archaeology
+  field: keywords
+  weight: 1.0
+- category: history
+  pattern: archaeological
+  field: keywords
+  weight: 1.0
+- category: history
+  pattern: heritage
+  field: keywords
+  weight: 1.0
+- category: philosophy
+  pattern: philosophy
+  field: keywords
+  weight: 1.0
+- category: philosophy
+  pattern: philosophical
+  field: keywords
+  weight: 1.0
+- category: philosophy
+  pattern: ethics
+  field: keywords
+  weight: 1.0
+- category: philosophy
+  pattern: ethical
+  field: keywords
+  weight: 1.0
+- category: philosophy
+  pattern: ethic
+  field: keywords
+  weight: 1.0
+- category: linguistics
+  pattern: linguistic
+  field: keywords
+  weight: 1.0
+- category: linguistics
+  pattern: phonetic
+  field: keywords
+  weight: 1.0
+- category: linguistics
+  pattern: translation
+  field: keywords
+  weight: 1.0
+- category: literature
+  pattern: literature
+  field: keywords
+  weight: 1.0
+- category: literature
+  pattern: literary
+  field: keywords
+  weight: 1.0
+- category: literature
+  pattern: novel
+  field: keywords
+  weight: 1.0
+- category: literature
+  pattern: novels
+  field: keywords
+  weight: 1.0
+- category: law
+  pattern: law
+  field: keywords
+  weight: 1.0
+- category: law
+  pattern: laws
+  field: keywords
+  weight: 1.0
+- category: law
+  pattern: legal
+  field: keywords
+  weight: 1.0
+- category: law
+  pattern: jurisprudence
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: arts
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: artistic
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: music
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: musical
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: cultural
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: culturally
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: culture
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: creative
+  field: keywords
+  weight: 1.0
+- category: arts-and-culture
+  pattern: creativity
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: machine learning
+  field: title
+  weight: 1.5
+- category: ai-ml
+  pattern: deep learning
+  field: title
+  weight: 1.5
+- category: ai-ml
+  pattern: neural network
+  field: title
+  weight: 1.5
+- category: ai-ml
+  pattern: neural networks
+  field: title
+  weight: 1.5
+- category: ai-ml
+  pattern: artificial intelligence
+  field: title
+  weight: 1.0
+- category: public-health
+  pattern: public health
+  field: title
+  weight: 1.5
+- category: mental-health
+  pattern: mental health
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: pandemic
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: pandics
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: outbreak
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: outbreaks
+  field: title
+  weight: 1.0
+- category: climate-science
+  pattern: climate change
+  field: title
+  weight: 1.5
+- category: climate-science
+  pattern: global warming
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: pollution
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: pollutant
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: polluting
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: renewable energy
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: carbon capture
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: solar energy
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: cybersecurity
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: misinformation
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: fake news
+  field: title
+  weight: 1.0
+- category: sociology
+  pattern: social media
+  field: title
+  weight: 1.0
+- category: sociology
+  pattern: inequality
+  field: title
+  weight: 1.0
+- category: economics
+  pattern: economic
+  field: title
+  weight: 1.0
+- category: education
+  pattern: education
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: genome
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: gene editing
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: antibiotic
+  field: title
+  weight: 1.0
+- category: neuroscience
+  pattern: neural
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: catalyst
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: quantum
+  field: title
+  weight: 1.0
+- category: astronomy
+  pattern: exoplanet
+  field: title
+  weight: 1.0
+- category: astronomy
+  pattern: galaxy
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: nanomaterial
+  field: title
+  weight: 1.0
+- category: political-science
+  pattern: democracy
+  field: title
+  weight: 1.0
+- category: management
+  pattern: supply chain
+  field: title
+  weight: 1.0
+- category: humanities
+  pattern: cultural heritage
+  field: title
+  weight: 1.0
+- category: life-sciences
+  pattern: life sciences
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: physical sciences
+  field: keywords
+  weight: 1.0
+- category: social-sciences
+  pattern: social sciences
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: health sciences
+  field: keywords
+  weight: 1.0
+- category: life-sciences
+  pattern: agricultural and biological sciences
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: physics and astronomy
+  field: keywords
+  weight: 1.0
+- category: earth-and-environment
+  pattern: environmental science
+  field: keywords
+  weight: 1.0
+- category: engineering-and-technology
+  pattern: engineering
+  field: keywords
+  weight: 1.0
+- category: humanities
+  pattern: arts and humanities
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: biochemistry genetics and molecular biology
+  field: keywords
+  weight: 1.0
+- category: management
+  pattern: business management and accounting
+  field: keywords
+  weight: 1.0
+- category: materials-science
+  pattern: materials science
+  field: keywords
+  weight: 1.0
+- category: psychology
+  pattern: psychology
+  field: keywords
+  weight: 1.0
+- category: geosciences
+  pattern: earth and planetary sciences
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: economics econometrics and finance
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: health professions
+  field: keywords
+  weight: 1.0
+- category: management
+  pattern: decision sciences
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: pharmacology toxicology and pharmaceutics
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: immunology and microbiology
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: nursing
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: dentistry
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plant science
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: nuclear and high energy physics
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: ecology evolution behavior and systematics
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: statistical and nonlinear physics
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: oncology
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: molecular biology
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: ecological modeling
+  field: keywords
+  weight: 1.0
+- category: sociology
+  pattern: sociology and political science
+  field: keywords
+  weight: 1.0
+- category: engineering-and-technology
+  pattern: electrical and electronic engineering
+  field: keywords
+  weight: 1.0
+- category: astronomy
+  pattern: astronomy and astrophysics
+  field: keywords
+  weight: 1.0
+- category: public-health
+  pattern: public health environmental and occupational health
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: pulmonary and respiratory medicine
+  field: keywords
+  weight: 1.0
+- category: political-science
+  pattern: political science and international relations
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: computer vision and pattern recognition
+  field: keywords
+  weight: 1.0
+- category: economics
+  pattern: economics and econometrics
+  field: keywords
+  weight: 1.0
+- category: literature
+  pattern: literature and literary theory
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: nature and landscape conservation
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: atomic and molecular physics and optics
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: botany
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: botanical
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: plant ecology
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plant diversity
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plant taxonomy
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plant and fungal species
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: species description
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: flora and fauna
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: vegetation dynamics
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: species distribution
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: landscape conservation
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: beetle
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: coleoptera
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: cerambycidae
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: staphylinidae
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: lepidoptera
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: insect ecology
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: insect plant interaction
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: mycorrhizal fungi
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plant parasitism
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plant chemical constituents
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: bryophyte
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: lichen and fungal
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: medicinal plant
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plant and fungal
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: wildlife ecology
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: avian ecology
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: fusion
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: plasma physics
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: particle accelerator
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: beam dynamics
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: magnetic confinement
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: cancer treatment
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: cancer immunotherapy
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: lung cancer
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: drug discovery
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: gene expression
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: protein structure
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: enzyme function
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: shape modeling
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: smart agriculture
+  field: keywords
+  weight: 1.0
+- category: microbiology
+  pattern: ubiquitin proteasome
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: single cell transcriptomic
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: computer graphics
+  field: keywords
+  weight: 1.0
+- category: earth-and-environment
+  pattern: atmospheric aerosol
+  field: keywords
+  weight: 1.0
+- category: earth-and-environment
+  pattern: hydrology
+  field: keywords
+  weight: 1.0
+- category: earth-and-environment
+  pattern: drought analysis
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: programming and type system
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: information retrieval
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: database system
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: operating system
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: network security
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: machine translation
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: formal verification
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: theorem proving
+  field: keywords
+  weight: 1.0
+- category: computer-science
+  pattern: program synthesis
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: neural architecture
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: deep neural
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: taxonomy
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: taxonomic
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: phylogenetic
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: phylogeny
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: plantae
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: tracheophyta
+  field: keywords
+  weight: 1.0
+- category: botany
+  pattern: magnoliopsida
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: animalia
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: arthropoda
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: insecta
+  field: keywords
+  weight: 1.0
+- category: entomology
+  pattern: euryusa
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: habitat
+  field: keywords
+  weight: 1.0
+- category: ecology
+  pattern: nesting
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: ai agent
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: ai governance
+  field: keywords
+  weight: 1.0
+- category: formal-methods
+  pattern: compcert
+  field: keywords
+  weight: 1.0
+- category: formal-methods
+  pattern: sel4
+  field: keywords
+  weight: 1.0
+- category: formal-methods
+  pattern: mathlib
+  field: keywords
+  weight: 1.0
+- category: formal-methods
+  pattern: lean 4
+  field: keywords
+  weight: 1.0
+- category: formal-methods
+  pattern: e8 lattice
+  field: keywords
+  weight: 1.0
+- category: formal-methods
+  pattern: benchmark
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: merkle dag
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: live gate
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: nasa jpl standard
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: scientist amr
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: quantum computing
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: quantum gravity
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: quantum physics
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: gibbs free energy
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: mathematical physics
+  field: keywords
+  weight: 1.0
+- category: physics
+  pattern: hadron
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: protein folding
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: molecular docking
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: bioinformatics
+  field: keywords
+  weight: 1.0
+- category: genetics
+  pattern: pdb
+  field: keywords
+  weight: 1.0
+- category: distributed-systems
+  pattern: distributed computing
+  field: keywords
+  weight: 1.0
+- category: developer-tools
+  pattern: python
+  field: keywords
+  weight: 1.0
+- category: developer-tools
+  pattern: rust
+  field: keywords
+  weight: 1.0
+- category: clinical-medicine
+  pattern: patient safety
+  field: keywords
+  weight: 1.0
+- category: health-sciences
+  pattern: systematic review
+  field: keywords
+  weight: 1.0
+- category: law
+  pattern: fakulta
+  field: keywords
+  weight: 1.0
+- category: law
+  pattern: studia iuridica
+  field: keywords
+  weight: 1.0
+- category: education
+  pattern: science communication
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: open data
+  field: keywords
+  weight: 1.0
+- category: data-engineering
+  pattern: provenance
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: reproducibility
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: reproducible research
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: open science
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: pre registration
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: preregistration
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: evidence based
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: independent research
+  field: keywords
+  weight: 1.0
+- category: research-methods
+  pattern: breakthrough discovery
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: desci
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: pouw
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: 9pwi
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: asc
+  field: keywords
+  weight: 1.0
+- category: software-engineering
+  pattern: hadron coin
+  field: keywords
+  weight: 1.0
+- category: ai-ml
+  pattern: computer vision
+  field: title
+  weight: 1.0
+- category: ai-ml
+  pattern: reinforcement learning
+  field: title
+  weight: 1.0
+- category: ai-ml
+  pattern: federated learning
+  field: title
+  weight: 1.0
+- category: ai-ml
+  pattern: natural language processing
+  field: title
+  weight: 1.0
+- category: ai-ml
+  pattern: image classification
+  field: title
+  weight: 1.0
+- category: ai-ml
+  pattern: object detection
+  field: title
+  weight: 1.0
+- category: ai-ml
+  pattern: convolutional neural
+  field: title
+  weight: 1.0
+- category: ai-ml
+  pattern: transformer model
+  field: title
+  weight: 1.0
+- category: llm
+  pattern: retrieval augmented
+  field: title
+  weight: 1.0
+- category: ai-agents
+  pattern: agentic system
+  field: title
+  weight: 1.0
+- category: ai-agents
+  pattern: multi agent
+  field: title
+  weight: 1.0
+- category: code-generation
+  pattern: program synthesis
+  field: title
+  weight: 1.0
+- category: software-testing
+  pattern: unit testing
+  field: title
+  weight: 1.0
+- category: software-testing
+  pattern: regression testing
+  field: title
+  weight: 1.0
+- category: program-repair
+  pattern: bug fix
+  field: title
+  weight: 1.0
+- category: software-maintenance
+  pattern: refactoring
+  field: title
+  weight: 1.0
+- category: software-maintenance
+  pattern: technical debt
+  field: title
+  weight: 1.0
+- category: program-analysis
+  pattern: code review
+  field: title
+  weight: 1.0
+- category: formal-methods
+  pattern: formal verification
+  field: title
+  weight: 1.0
+- category: formal-methods
+  pattern: formal method
+  field: title
+  weight: 1.0
+- category: formal-methods
+  pattern: theorem proving
+  field: title
+  weight: 1.0
+- category: formal-methods
+  pattern: model checking
+  field: title
+  weight: 1.0
+- category: formal-methods
+  pattern: satisfiability
+  field: title
+  weight: 1.0
+- category: developer-tools
+  pattern: programming language
+  field: title
+  weight: 1.0
+- category: developer-tools
+  pattern: software development
+  field: title
+  weight: 1.0
+- category: developer-tools
+  pattern: compiler
+  field: title
+  weight: 1.0
+- category: mlops
+  pattern: model deployment
+  field: title
+  weight: 1.0
+- category: mlops
+  pattern: model monitoring
+  field: title
+  weight: 1.0
+- category: data-engineering
+  pattern: data warehouse
+  field: title
+  weight: 1.0
+- category: data-engineering
+  pattern: extract transform load
+  field: title
+  weight: 1.0
+- category: databases
+  pattern: query processing
+  field: title
+  weight: 1.0
+- category: databases
+  pattern: database system
+  field: title
+  weight: 1.0
+- category: databases
+  pattern: relational database
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: malware
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: intrusion detection
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: authentication
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: cryptography
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: privacy preserving
+  field: title
+  weight: 1.0
+- category: security-privacy
+  pattern: firewall
+  field: title
+  weight: 1.0
+- category: software-architecture
+  pattern: design pattern
+  field: title
+  weight: 1.0
+- category: empirical-software-engineering
+  pattern: software engineering education
+  field: title
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: user interface
+  field: title
+  weight: 1.0
+- category: human-computer-interaction
+  pattern: human robot interaction
+  field: title
+  weight: 1.0
+- category: distributed-systems
+  pattern: blockchain
+  field: title
+  weight: 1.0
+- category: distributed-systems
+  pattern: cloud computing
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: cancer
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: clinical trial
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: patients
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: treatment
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: therapy
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: diagnosis
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: surgery
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: patient
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: oncology
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: disease
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: drug delivery
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: nutrition
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: obesity
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: diabetes
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: cardiovascular
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: malaria
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: tuberculosis
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: dengue
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: covid
+  field: title
+  weight: 1.0
+- category: public-health
+  pattern: health policy
+  field: title
+  weight: 1.0
+- category: public-health
+  pattern: healthcare
+  field: title
+  weight: 1.0
+- category: mental-health
+  pattern: depression
+  field: title
+  weight: 1.0
+- category: mental-health
+  pattern: anxiety
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: epidemiology
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: vaccine
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: gene expression
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: genomic
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: protein folding
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: crispr
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: antibiotic resistance
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: plasmodium
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: bacterial
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: virus
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: immunology
+  field: title
+  weight: 1.0
+- category: neuroscience
+  pattern: brain
+  field: title
+  weight: 1.0
+- category: neuroscience
+  pattern: cognitive
+  field: title
+  weight: 1.0
+- category: neuroscience
+  pattern: neuroscience
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: plant
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: botanical
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: flora
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: phylogenetic
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: taxonomic
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: species description
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: cultivation
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: breeding
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: crop yield
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: pesticide
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: herbicide
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: fertilizer
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: pollination
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: symbiosis
+  field: title
+  weight: 1.0
+- category: botany
+  pattern: photosynthesis
+  field: title
+  weight: 1.0
+- category: entomology
+  pattern: insect
+  field: title
+  weight: 1.0
+- category: entomology
+  pattern: beetle
+  field: title
+  weight: 1.0
+- category: entomology
+  pattern: coleoptera
+  field: title
+  weight: 1.0
+- category: entomology
+  pattern: lepidoptera
+  field: title
+  weight: 1.0
+- category: entomology
+  pattern: mosquito
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: species
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: ecology
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: biodiversity
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: ecosystem
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: habitat
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: conservation
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: vegetation
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: forest
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: marine
+  field: title
+  weight: 1.0
+- category: ecology
+  pattern: wildlife
+  field: title
+  weight: 1.0
+- category: climate-science
+  pattern: greenhouse gas
+  field: title
+  weight: 1.0
+- category: climate-science
+  pattern: climate model
+  field: title
+  weight: 1.0
+- category: climate-science
+  pattern: climate adaptation
+  field: title
+  weight: 1.0
+- category: climate-science
+  pattern: climate resilience
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: carbon emission
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: remote sensing
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: groundwater
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: soil
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: water quality
+  field: title
+  weight: 1.0
+- category: environmental-science
+  pattern: recycling
+  field: title
+  weight: 1.0
+- category: geosciences
+  pattern: seismic
+  field: title
+  weight: 1.0
+- category: geosciences
+  pattern: glacier
+  field: title
+  weight: 1.0
+- category: geosciences
+  pattern: sediment
+  field: title
+  weight: 1.0
+- category: geosciences
+  pattern: mineral
+  field: title
+  weight: 1.0
+- category: geosciences
+  pattern: volcanic
+  field: title
+  weight: 1.0
+- category: geosciences
+  pattern: river
+  field: title
+  weight: 1.0
+- category: oceanography
+  pattern: coral reef
+  field: title
+  weight: 1.0
+- category: oceanography
+  pattern: aquaculture
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: solar cell
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: photovoltaic
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: battery
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: hydrogen
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: nuclear reactor
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: wind turbine
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: energy efficiency
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: semiconductor
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: ceramic
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: composite material
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: spectroscopy
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: chemical synthesis
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: crystal structure
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: polymer
+  field: title
+  weight: 1.0
+- category: chemical-engineering
+  pattern: reaction engineering
+  field: title
+  weight: 1.0
+- category: chemical-engineering
+  pattern: separation process
+  field: title
+  weight: 1.0
+- category: biomedical-engineering
+  pattern: medical device
+  field: title
+  weight: 1.0
+- category: biomedical-engineering
+  pattern: tissue engineering
+  field: title
+  weight: 1.0
+- category: civil-engineering
+  pattern: civil engineering
+  field: title
+  weight: 1.0
+- category: civil-engineering
+  pattern: structural engineering
+  field: title
+  weight: 1.0
+- category: civil-engineering
+  pattern: mechanical engineering
+  field: title
+  weight: 1.0
+- category: civil-engineering
+  pattern: construction
+  field: title
+  weight: 1.0
+- category: astronomy
+  pattern: telescope
+  field: title
+  weight: 1.0
+- category: astronomy
+  pattern: star formation
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: particle accelerator
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: plasma
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: cosmology
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: scattering
+  field: title
+  weight: 1.0
+- category: mathematics
+  pattern: theorem
+  field: title
+  weight: 1.0
+- category: mathematics
+  pattern: combinatoric
+  field: title
+  weight: 1.0
+- category: mathematics
+  pattern: differential equation
+  field: title
+  weight: 1.0
+- category: mathematics
+  pattern: topology
+  field: title
+  weight: 1.0
+- category: mathematics
+  pattern: algebraic
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: bayesian
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: regression
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: statistical
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: probability
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: meta analysis
+  field: title
+  weight: 1.0
+- category: economics
+  pattern: market
+  field: title
+  weight: 1.0
+- category: economics
+  pattern: tourism
+  field: title
+  weight: 1.0
+- category: management
+  pattern: management
+  field: title
+  weight: 1.0
+- category: management
+  pattern: supply chain management
+  field: title
+  weight: 1.0
+- category: management
+  pattern: organizational
+  field: title
+  weight: 1.0
+- category: management
+  pattern: business model
+  field: title
+  weight: 1.0
+- category: management
+  pattern: marketing
+  field: title
+  weight: 1.0
+- category: sociology
+  pattern: migration
+  field: title
+  weight: 1.0
+- category: sociology
+  pattern: gender
+  field: title
+  weight: 1.0
+- category: sociology
+  pattern: demographic
+  field: title
+  weight: 1.0
+- category: political-science
+  pattern: policy
+  field: title
+  weight: 1.0
+- category: political-science
+  pattern: election
+  field: title
+  weight: 1.0
+- category: political-science
+  pattern: international relation
+  field: title
+  weight: 1.0
+- category: psychology
+  pattern: cognitive science
+  field: title
+  weight: 1.0
+- category: psychology
+  pattern: behavior
+  field: title
+  weight: 1.0
+- category: psychology
+  pattern: psychological
+  field: title
+  weight: 1.0
+- category: education
+  pattern: students
+  field: title
+  weight: 1.0
+- category: education
+  pattern: teaching
+  field: title
+  weight: 1.0
+- category: education
+  pattern: pedagog
+  field: title
+  weight: 1.0
+- category: law
+  pattern: legal
+  field: title
+  weight: 1.0
+- category: law
+  pattern: court
+  field: title
+  weight: 1.0
+- category: law
+  pattern: jurisprudence
+  field: title
+  weight: 1.0
+- category: philosophy
+  pattern: philosoph
+  field: title
+  weight: 1.0
+- category: philosophy
+  pattern: ethical
+  field: title
+  weight: 1.0
+- category: history
+  pattern: historical
+  field: title
+  weight: 1.0
+- category: history
+  pattern: heritage
+  field: title
+  weight: 1.0
+- category: history
+  pattern: archaeolog
+  field: title
+  weight: 1.0
+- category: linguistics
+  pattern: linguistic
+  field: title
+  weight: 1.0
+- category: linguistics
+  pattern: grammar
+  field: title
+  weight: 1.0
+- category: linguistics
+  pattern: translation
+  field: title
+  weight: 1.0
+- category: literature
+  pattern: literature
+  field: title
+  weight: 1.0
+- category: literature
+  pattern: novel
+  field: title
+  weight: 1.0
+- category: arts-and-culture
+  pattern: cultural diversity
+  field: title
+  weight: 1.0
+- category: arts-and-culture
+  pattern: music
+  field: title
+  weight: 1.0
+- category: arts-and-culture
+  pattern: 'art '
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: synthesis
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: catalysis
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: kinetics
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: nuclear magnetic resonance
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: mass spectrometry
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: electrochemical
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: organic compound
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: metal complex
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: molecular structure
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: isomer
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: titration
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: nucleoside
+  field: title
+  weight: 1.0
+- category: chemistry
+  pattern: crystalline
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: alloy
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: thin film
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: nanoparticle
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: nanostructure
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: graphene
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: electroluminescence
+  field: title
+  weight: 1.0
+- category: materials-science
+  pattern: photoluminescence
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: optical
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: holographic
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: diffraction
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: electromagnetic
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: x ray
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: photon
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: electron
+  field: title
+  weight: 1.0
+- category: physics
+  pattern: magnetic
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: cathode
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: supercapacitor
+  field: title
+  weight: 1.0
+- category: energy-engineering
+  pattern: electrolyte
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: tumor
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: carcinoma
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: syndrome
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: prognosis
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: stent
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: chemotherapy
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: in vitro
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: in vivo
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: mortality
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: prevalence
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: randomized
+  field: title
+  weight: 1.0
+- category: clinical-medicine
+  pattern: multicenter
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: physiology
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: assay
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: pharmacokinetic
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: hypertension
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: antibody
+  field: title
+  weight: 1.0
+- category: health-sciences
+  pattern: peptide
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: antibacterial
+  field: title
+  weight: 1.0
+- category: microbiology
+  pattern: bacteri
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: mutation
+  field: title
+  weight: 1.0
+- category: genetics
+  pattern: genome wide
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: nosocomial
+  field: title
+  weight: 1.0
+- category: epidemiology
+  pattern: vaccination
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: confidence interval
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: p value
+  field: title
+  weight: 1.0
+- category: statistics
+  pattern: sample size
+  field: title
+  weight: 1.0
 source_mappings:
-  - source: "ARXIV"
-    value: "cs.AI"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "cs.CL"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "cs.CV"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "cs.DS"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "cs.LG"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "cs.MM"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "cs.SE"
-    category: "software-engineering"
-  - source: "ARXIV"
-    value: "cs.PL"
-    category: "software-engineering"
-  - source: "ARXIV"
-    value: "cs.CR"
-    category: "security-privacy"
-  - source: "ARXIV"
-    value: "cs.DB"
-    category: "databases"
-  - source: "ARXIV"
-    value: "cs.DC"
-    category: "distributed-systems"
-  - source: "ARXIV"
-    value: "cs.NI"
-    category: "distributed-systems"
-  - source: "ARXIV"
-    value: "cs.HC"
-    category: "human-computer-interaction"
-  - source: "ARXIV"
-    value: "cs.CY"
-    category: "computer-science"
-  - source: "ARXIV"
-    value: "cs.CE"
-    category: "computer-science"
-  - source: "ARXIV"
-    value: "cs.GT"
-    category: "computer-science"
-  - source: "ARXIV"
-    value: "cs.IR"
-    category: "computer-science"
-  - source: "ARXIV"
-    value: "cs.IT"
-    category: "computer-science"
-  - source: "ARXIV"
-    value: "cs.LO"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "cs.SI"
-    category: "computer-science"
-  - source: "ARXIV"
-    value: "cs.SY"
-    category: "computer-science"
-  - source: "ARXIV"
-    value: "math.AC"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.AG"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.AP"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.AT"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.CO"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.CT"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.DG"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.DS"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "math.FA"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.GM"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.GN"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.GR"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.GT"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.IT"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.KT"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.LO"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.MG"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.MP"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.NA"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.NT"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.OC"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.PR"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.QA"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.RA"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.RT"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.SG"
-    category: "mathematics"
-  - source: "ARXIV"
-    value: "math.SP"
-    category: "physics"
-  - source: "ARXIV"
-    value: "math.ST"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "astro-ph"
-    category: "astronomy"
-  - source: "ARXIV"
-    value: "cond-mat"
-    category: "materials-science"
-  - source: "ARXIV"
-    value: "gr-qc"
-    category: "physics"
-  - source: "ARXIV"
-    value: "hep-ex"
-    category: "physics"
-  - source: "ARXIV"
-    value: "hep-lat"
-    category: "physics"
-  - source: "ARXIV"
-    value: "hep-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "hep-th"
-    category: "physics"
-  - source: "ARXIV"
-    value: "math-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "nlin"
-    category: "physics"
-  - source: "ARXIV"
-    value: "nucl-ex"
-    category: "physics"
-  - source: "ARXIV"
-    value: "nucl-th"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.acc-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.ao-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.app-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.atm-clus"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.bio-ph"
-    category: "life-sciences"
-  - source: "ARXIV"
-    value: "physics.chem-ph"
-    category: "chemistry"
-  - source: "ARXIV"
-    value: "physics.class-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.comp-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.data-an"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "physics.flu-dyn"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.gen-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.geo-ph"
-    category: "geosciences"
-  - source: "ARXIV"
-    value: "physics.hist-ph"
-    category: "history"
-  - source: "ARXIV"
-    value: "physics.ins-det"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.med-ph"
-    category: "health-sciences"
-  - source: "ARXIV"
-    value: "physics.optics"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.plasm-ph"
-    category: "physics"
-  - source: "ARXIV"
-    value: "physics.pop-ph"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "physics.soc-ph"
-    category: "sociology"
-  - source: "ARXIV"
-    value: "physics.space-ph"
-    category: "astronomy"
-  - source: "ARXIV"
-    value: "physics.stat-ph"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "q-bio.BM"
-    category: "biomedical-engineering"
-  - source: "ARXIV"
-    value: "q-bio.CB"
-    category: "life-sciences"
-  - source: "ARXIV"
-    value: "q-bio.GN"
-    category: "genetics"
-  - source: "ARXIV"
-    value: "q-bio.MN"
-    category: "life-sciences"
-  - source: "ARXIV"
-    value: "q-bio.NC"
-    category: "neuroscience"
-  - source: "ARXIV"
-    value: "q-bio.OT"
-    category: "life-sciences"
-  - source: "ARXIV"
-    value: "q-bio.PE"
-    category: "ecology"
-  - source: "ARXIV"
-    value: "q-bio.QM"
-    category: "biomedical-engineering"
-  - source: "ARXIV"
-    value: "q-bio.SC"
-    category: "life-sciences"
-  - source: "ARXIV"
-    value: "q-bio.TO"
-    category: "life-sciences"
-  - source: "ARXIV"
-    value: "q-fin.CP"
-    category: "economics"
-  - source: "ARXIV"
-    value: "q-fin.EC"
-    category: "economics"
-  - source: "ARXIV"
-    value: "q-fin.GN"
-    category: "economics"
-  - source: "ARXIV"
-    value: "q-fin.MF"
-    category: "economics"
-  - source: "ARXIV"
-    value: "q-fin.PM"
-    category: "economics"
-  - source: "ARXIV"
-    value: "q-fin.PR"
-    category: "economics"
-  - source: "ARXIV"
-    value: "q-fin.RM"
-    category: "economics"
-  - source: "ARXIV"
-    value: "q-fin.ST"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "q-fin.TR"
-    category: "economics"
-  - source: "ARXIV"
-    value: "stat.AP"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "stat.CO"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "stat.ME"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "stat.ML"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "stat.OT"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "stat.TH"
-    category: "statistics"
-  - source: "ARXIV"
-    value: "econ.EM"
-    category: "economics"
-  - source: "ARXIV"
-    value: "econ.GN"
-    category: "economics"
-  - source: "ARXIV"
-    value: "econ.TH"
-    category: "economics"
-  - source: "ARXIV"
-    value: "eess.AS"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "eess.IV"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "eess.SP"
-    category: "ai-ml"
-  - source: "ARXIV"
-    value: "eess.SY"
-    category: "computer-science"
-  - source: "DATACITE"
-    value: "Agricultural Sciences"
-    category: "ecology"
-  - source: "DATACITE"
-    value: "Arts and Humanities"
-    category: "humanities"
-  - source: "DATACITE"
-    value: "Earth Sciences"
-    category: "earth-and-environment"
-  - source: "DATACITE"
-    value: "Engineering"
-    category: "engineering-and-technology"
-  - source: "DATACITE"
-    value: "General Sciences"
-    category: "natural-sciences"
-  - source: "DATACITE"
-    value: "Law and Political Science"
-    category: "political-science"
-  - source: "DATACITE"
-    value: "Life Sciences"
-    category: "life-sciences"
-  - source: "DATACITE"
-    value: "Medical and Health Sciences"
-    category: "health-sciences"
-  - source: "DATACITE"
-    value: "Physical Sciences"
-    category: "natural-sciences"
-  - source: "DATACITE"
-    value: "Social Sciences"
-    category: "social-sciences"
-  - source: "DATACITE"
-    value: "Technology"
-    category: "computer-science"
+- source: ARXIV
+  value: cs.AI
+  category: ai-ml
+- source: ARXIV
+  value: cs.CL
+  category: ai-ml
+- source: ARXIV
+  value: cs.CV
+  category: ai-ml
+- source: ARXIV
+  value: cs.DS
+  category: ai-ml
+- source: ARXIV
+  value: cs.LG
+  category: ai-ml
+- source: ARXIV
+  value: cs.MM
+  category: ai-ml
+- source: ARXIV
+  value: cs.SE
+  category: software-engineering
+- source: ARXIV
+  value: cs.PL
+  category: software-engineering
+- source: ARXIV
+  value: cs.CR
+  category: security-privacy
+- source: ARXIV
+  value: cs.DB
+  category: databases
+- source: ARXIV
+  value: cs.DC
+  category: distributed-systems
+- source: ARXIV
+  value: cs.NI
+  category: distributed-systems
+- source: ARXIV
+  value: cs.HC
+  category: human-computer-interaction
+- source: ARXIV
+  value: cs.CY
+  category: computer-science
+- source: ARXIV
+  value: cs.CE
+  category: computer-science
+- source: ARXIV
+  value: cs.GT
+  category: computer-science
+- source: ARXIV
+  value: cs.IR
+  category: computer-science
+- source: ARXIV
+  value: cs.IT
+  category: computer-science
+- source: ARXIV
+  value: cs.LO
+  category: mathematics
+- source: ARXIV
+  value: cs.SI
+  category: computer-science
+- source: ARXIV
+  value: cs.SY
+  category: computer-science
+- source: ARXIV
+  value: math.AC
+  category: mathematics
+- source: ARXIV
+  value: math.AG
+  category: mathematics
+- source: ARXIV
+  value: math.AP
+  category: mathematics
+- source: ARXIV
+  value: math.AT
+  category: mathematics
+- source: ARXIV
+  value: math.CO
+  category: mathematics
+- source: ARXIV
+  value: math.CT
+  category: mathematics
+- source: ARXIV
+  value: math.DG
+  category: mathematics
+- source: ARXIV
+  value: math.DS
+  category: statistics
+- source: ARXIV
+  value: math.FA
+  category: mathematics
+- source: ARXIV
+  value: math.GM
+  category: mathematics
+- source: ARXIV
+  value: math.GN
+  category: mathematics
+- source: ARXIV
+  value: math.GR
+  category: mathematics
+- source: ARXIV
+  value: math.GT
+  category: mathematics
+- source: ARXIV
+  value: math.IT
+  category: mathematics
+- source: ARXIV
+  value: math.KT
+  category: mathematics
+- source: ARXIV
+  value: math.LO
+  category: mathematics
+- source: ARXIV
+  value: math.MG
+  category: mathematics
+- source: ARXIV
+  value: math.MP
+  category: mathematics
+- source: ARXIV
+  value: math.NA
+  category: mathematics
+- source: ARXIV
+  value: math.NT
+  category: mathematics
+- source: ARXIV
+  value: math.OC
+  category: mathematics
+- source: ARXIV
+  value: math.PR
+  category: mathematics
+- source: ARXIV
+  value: math.QA
+  category: mathematics
+- source: ARXIV
+  value: math.RA
+  category: mathematics
+- source: ARXIV
+  value: math.RT
+  category: mathematics
+- source: ARXIV
+  value: math.SG
+  category: mathematics
+- source: ARXIV
+  value: math.SP
+  category: physics
+- source: ARXIV
+  value: math.ST
+  category: statistics
+- source: ARXIV
+  value: astro-ph
+  category: astronomy
+- source: ARXIV
+  value: cond-mat
+  category: materials-science
+- source: ARXIV
+  value: gr-qc
+  category: physics
+- source: ARXIV
+  value: hep-ex
+  category: physics
+- source: ARXIV
+  value: hep-lat
+  category: physics
+- source: ARXIV
+  value: hep-ph
+  category: physics
+- source: ARXIV
+  value: hep-th
+  category: physics
+- source: ARXIV
+  value: math-ph
+  category: physics
+- source: ARXIV
+  value: nlin
+  category: physics
+- source: ARXIV
+  value: nucl-ex
+  category: physics
+- source: ARXIV
+  value: nucl-th
+  category: physics
+- source: ARXIV
+  value: physics.acc-ph
+  category: physics
+- source: ARXIV
+  value: physics.ao-ph
+  category: physics
+- source: ARXIV
+  value: physics.app-ph
+  category: physics
+- source: ARXIV
+  value: physics.atm-clus
+  category: physics
+- source: ARXIV
+  value: physics.bio-ph
+  category: life-sciences
+- source: ARXIV
+  value: physics.chem-ph
+  category: chemistry
+- source: ARXIV
+  value: physics.class-ph
+  category: physics
+- source: ARXIV
+  value: physics.comp-ph
+  category: physics
+- source: ARXIV
+  value: physics.data-an
+  category: statistics
+- source: ARXIV
+  value: physics.flu-dyn
+  category: physics
+- source: ARXIV
+  value: physics.gen-ph
+  category: physics
+- source: ARXIV
+  value: physics.geo-ph
+  category: geosciences
+- source: ARXIV
+  value: physics.hist-ph
+  category: history
+- source: ARXIV
+  value: physics.ins-det
+  category: physics
+- source: ARXIV
+  value: physics.med-ph
+  category: health-sciences
+- source: ARXIV
+  value: physics.optics
+  category: physics
+- source: ARXIV
+  value: physics.plasm-ph
+  category: physics
+- source: ARXIV
+  value: physics.pop-ph
+  category: statistics
+- source: ARXIV
+  value: physics.soc-ph
+  category: sociology
+- source: ARXIV
+  value: physics.space-ph
+  category: astronomy
+- source: ARXIV
+  value: physics.stat-ph
+  category: statistics
+- source: ARXIV
+  value: q-bio.BM
+  category: biomedical-engineering
+- source: ARXIV
+  value: q-bio.CB
+  category: life-sciences
+- source: ARXIV
+  value: q-bio.GN
+  category: genetics
+- source: ARXIV
+  value: q-bio.MN
+  category: life-sciences
+- source: ARXIV
+  value: q-bio.NC
+  category: neuroscience
+- source: ARXIV
+  value: q-bio.OT
+  category: life-sciences
+- source: ARXIV
+  value: q-bio.PE
+  category: ecology
+- source: ARXIV
+  value: q-bio.QM
+  category: biomedical-engineering
+- source: ARXIV
+  value: q-bio.SC
+  category: life-sciences
+- source: ARXIV
+  value: q-bio.TO
+  category: life-sciences
+- source: ARXIV
+  value: q-fin.CP
+  category: economics
+- source: ARXIV
+  value: q-fin.EC
+  category: economics
+- source: ARXIV
+  value: q-fin.GN
+  category: economics
+- source: ARXIV
+  value: q-fin.MF
+  category: economics
+- source: ARXIV
+  value: q-fin.PM
+  category: economics
+- source: ARXIV
+  value: q-fin.PR
+  category: economics
+- source: ARXIV
+  value: q-fin.RM
+  category: economics
+- source: ARXIV
+  value: q-fin.ST
+  category: statistics
+- source: ARXIV
+  value: q-fin.TR
+  category: economics
+- source: ARXIV
+  value: stat.AP
+  category: statistics
+- source: ARXIV
+  value: stat.CO
+  category: statistics
+- source: ARXIV
+  value: stat.ME
+  category: statistics
+- source: ARXIV
+  value: stat.ML
+  category: ai-ml
+- source: ARXIV
+  value: stat.OT
+  category: statistics
+- source: ARXIV
+  value: stat.TH
+  category: statistics
+- source: ARXIV
+  value: econ.EM
+  category: economics
+- source: ARXIV
+  value: econ.GN
+  category: economics
+- source: ARXIV
+  value: econ.TH
+  category: economics
+- source: ARXIV
+  value: eess.AS
+  category: ai-ml
+- source: ARXIV
+  value: eess.IV
+  category: ai-ml
+- source: ARXIV
+  value: eess.SP
+  category: ai-ml
+- source: ARXIV
+  value: eess.SY
+  category: computer-science
+- source: DATACITE
+  value: Agricultural Sciences
+  category: ecology
+- source: DATACITE
+  value: Arts and Humanities
+  category: humanities
+- source: DATACITE
+  value: Earth Sciences
+  category: earth-and-environment
+- source: DATACITE
+  value: Engineering
+  category: engineering-and-technology
+- source: DATACITE
+  value: General Sciences
+  category: natural-sciences
+- source: DATACITE
+  value: Law and Political Science
+  category: political-science
+- source: DATACITE
+  value: Life Sciences
+  category: life-sciences
+- source: DATACITE
+  value: Medical and Health Sciences
+  category: health-sciences
+- source: DATACITE
+  value: Physical Sciences
+  category: natural-sciences
+- source: DATACITE
+  value: Social Sciences
+  category: social-sciences
+- source: DATACITE
+  value: Technology
+  category: computer-science
+- source: OPENALEX
+  value: physical sciences
+  category: physics
+- source: OPENALEX
+  value: life sciences
+  category: life-sciences
+- source: OPENALEX
+  value: social sciences
+  category: social-sciences
+- source: OPENALEX
+  value: health sciences
+  category: health-sciences
+- source: OPENALEX
+  value: agricultural and biological sciences
+  category: life-sciences
+- source: OPENALEX
+  value: physics and astronomy
+  category: physics
+- source: OPENALEX
+  value: medicine
+  category: clinical-medicine
+- source: OPENALEX
+  value: environmental science
+  category: environmental-science
+- source: OPENALEX
+  value: engineering
+  category: engineering-and-technology
+- source: OPENALEX
+  value: computer science
+  category: computer-science
+- source: OPENALEX
+  value: arts and humanities
+  category: humanities
+- source: OPENALEX
+  value: biochemistry, genetics and molecular biology
+  category: genetics
+- source: OPENALEX
+  value: business, management and accounting
+  category: management
+- source: OPENALEX
+  value: materials science
+  category: materials-science
+- source: OPENALEX
+  value: psychology
+  category: psychology
+- source: OPENALEX
+  value: mathematics
+  category: mathematics
+- source: OPENALEX
+  value: earth and planetary sciences
+  category: geosciences
+- source: OPENALEX
+  value: economics, econometrics and finance
+  category: economics
+- source: OPENALEX
+  value: chemistry
+  category: chemistry
+- source: OPENALEX
+  value: neuroscience
+  category: neuroscience
+- source: OPENALEX
+  value: health professions
+  category: clinical-medicine
+- source: OPENALEX
+  value: decision sciences
+  category: management
+- source: OPENALEX
+  value: pharmacology, toxicology and pharmaceutics
+  category: health-sciences
+- source: OPENALEX
+  value: immunology and microbiology
+  category: microbiology
+- source: OPENALEX
+  value: energy
+  category: energy-engineering
+- source: OPENALEX
+  value: nursing
+  category: clinical-medicine
+- source: OPENALEX
+  value: dentistry
+  category: clinical-medicine
+- source: OPENALEX
+  value: chemical engineering
+  category: chemical-engineering
+- source: OPENALEX
+  value: nuclear and high energy physics
+  category: physics
+- source: OPENALEX
+  value: statistical and nonlinear physics
+  category: physics
+- source: OPENALEX
+  value: ecology, evolution, behavior and systematics
+  category: ecology
+- source: OPENALEX
+  value: plant science
+  category: botany
+- source: OPENALEX
+  value: ecology
+  category: ecology
+- source: OPENALEX
+  value: inorganic chemistry
+  category: chemistry
+- source: OPENALEX
+  value: electrical and electronic engineering
+  category: engineering-and-technology
+- source: OPENALEX
+  value: oncology
+  category: clinical-medicine
+- source: OPENALEX
+  value: nature and landscape conservation
+  category: ecology
+- source: OPENALEX
+  value: ecological modeling
+  category: ecology
+- source: OPENALEX
+  value: pulmonary and respiratory medicine
+  category: clinical-medicine
+- source: OPENALEX
+  value: information systems
+  category: computer-science
+- source: OPENALEX
+  value: astronomy and astrophysics
+  category: astronomy
+- source: OPENALEX
+  value: molecular biology
+  category: genetics
+- source: OPENALEX
+  value: computer vision and pattern recognition
+  category: ai-ml
+- source: OPENALEX
+  value: surgery
+  category: clinical-medicine
+- source: OPENALEX
+  value: immunology
+  category: microbiology
+- source: OPENALEX
+  value: artificial intelligence
+  category: ai-ml
+- source: OPENALEX
+  value: atomic and molecular physics, and optics
+  category: physics
+- source: OPENALEX
+  value: genetics
+  category: genetics
+- source: OPENALEX
+  value: epidemiology
+  category: epidemiology
+- source: OPENALEX
+  value: obstetrics and gynecology
+  category: clinical-medicine
+- source: OPENALEX
+  value: endocrinology, diabetes and metabolism
+  category: health-sciences
+- source: OPENALEX
+  value: mechanical engineering
+  category: civil-engineering
+- source: OPENALEX
+  value: sociology and political science
+  category: sociology
+- source: OPENALEX
+  value: oceanography
+  category: oceanography
+- source: OPENALEX
+  value: software
+  category: software-engineering
+- source: OPENALEX
+  value: public health, environmental and occupational health
+  category: public-health
+- source: OPENALEX
+  value: applied mathematics
+  category: mathematics
+- source: OPENALEX
+  value: industrial and manufacturing engineering
+  category: civil-engineering
+- source: OPENALEX
+  value: pediatrics, perinatology and child health
+  category: clinical-medicine
+- source: OPENALEX
+  value: toxicology
+  category: health-sciences
+- source: OPENALEX
+  value: education
+  category: education
+- source: OPENALEX
+  value: atmospheric science
+  category: climate-science
+- source: OPENALEX
+  value: condensed matter physics
+  category: materials-science
+- source: OPENALEX
+  value: neurology
+  category: neuroscience
+- source: OPENALEX
+  value: literature and literary theory
+  category: literature
+- source: OPENALEX
+  value: parasitology
+  category: microbiology
+- source: OPENALEX
+  value: clinical psychology
+  category: psychology
+- source: OPENALEX
+  value: geography, planning and development
+  category: geosciences
+- source: OPENALEX
+  value: soil science
+  category: environmental-science
+- source: OPENALEX
+  value: virology
+  category: microbiology
+- source: OPENALEX
+  value: environmental engineering
+  category: environmental-science
+- source: OPENALEX
+  value: history
+  category: history
+- source: OPENALEX
+  value: finance
+  category: economics
+- source: OPENALEX
+  value: accounting
+  category: management
+- source: OPENALEX
+  value: microbiology
+  category: microbiology
+- source: OPENALEX
+  value: philosophy
+  category: philosophy
+- source: OPENALEX
+  value: economics and econometrics
+  category: economics
+- source: OPENALEX
+  value: geology
+  category: geosciences
+- source: OPENALEX
+  value: religious studies
+  category: philosophy
+- source: OPENALEX
+  value: marketing
+  category: management
+- source: OPENALEX
+  value: biochemistry
+  category: genetics
+- source: OPENALEX
+  value: pharmacology
+  category: health-sciences
+- source: OPENALEX
+  value: biomedical engineering
+  category: biomedical-engineering
+- source: OPENALEX
+  value: law
+  category: law
+- source: OPENALEX
+  value: management, monitoring, policy and law
+  category: management
+- source: OPENALEX
+  value: demography
+  category: sociology
+- source: OPENALEX
+  value: human-computer interaction
+  category: human-computer-interaction
+- source: OPENALEX
+  value: organic chemistry
+  category: chemistry
+- source: OPENALEX
+  value: tourism, leisure and hospitality management
+  category: economics
+- source: OPENALEX
+  value: endocrinology
+  category: health-sciences
+- source: OPENALEX
+  value: pharmacy
+  category: health-sciences
+- source: OPENALEX
+  value: political science and international relations
+  category: political-science
+- source: ARXIV
+  value: astro-ph.co
+  category: astronomy
+- source: ARXIV
+  value: astro-ph.ep
+  category: astronomy
+- source: ARXIV
+  value: astro-ph.ga
+  category: astronomy
+- source: ARXIV
+  value: astro-ph.he
+  category: astronomy
+- source: ARXIV
+  value: astro-ph.im
+  category: astronomy
+- source: ARXIV
+  value: astro-ph.sr
+  category: astronomy
+- source: ARXIV
+  value: cond-mat.dis-nn
+  category: physics
+- source: ARXIV
+  value: cond-mat.mes-hall
+  category: materials-science
+- source: ARXIV
+  value: cond-mat.mtrl-sci
+  category: materials-science
+- source: ARXIV
+  value: cond-mat.other
+  category: materials-science
+- source: ARXIV
+  value: cond-mat.quant-gas
+  category: materials-science
+- source: ARXIV
+  value: cond-mat.soft
+  category: materials-science
+- source: ARXIV
+  value: cond-mat.stat-mech
+  category: physics
+- source: ARXIV
+  value: cond-mat.str-el
+  category: materials-science
+- source: ARXIV
+  value: cond-mat.supr-con
+  category: materials-science
+- source: ARXIV
+  value: cs.ar
+  category: ai-ml
+- source: ARXIV
+  value: cs.cc
+  category: computer-science
+- source: ARXIV
+  value: cs.cg
+  category: computer-science
+- source: ARXIV
+  value: cs.dl
+  category: computer-science
+- source: ARXIV
+  value: cs.dm
+  category: computer-science
+- source: ARXIV
+  value: cs.et
+  category: computer-science
+- source: ARXIV
+  value: cs.fl
+  category: computer-science
+- source: ARXIV
+  value: cs.gr
+  category: computer-science
+- source: ARXIV
+  value: cs.ma
+  category: mathematics
+- source: ARXIV
+  value: cs.ms
+  category: computer-science
+- source: ARXIV
+  value: cs.na
+  category: computer-science
+- source: ARXIV
+  value: cs.ne
+  category: ai-ml
+- source: ARXIV
+  value: cs.oh
+  category: computer-science
+- source: ARXIV
+  value: cs.os
+  category: computer-science
+- source: ARXIV
+  value: cs.pf
+  category: computer-science
+- source: ARXIV
+  value: cs.ro
+  category: ai-ml
+- source: ARXIV
+  value: cs.sc
+  category: computer-science
+- source: ARXIV
+  value: cs.sd
+  category: computer-science
+- source: ARXIV
+  value: math.ca
+  category: mathematics
+- source: ARXIV
+  value: math.cv
+  category: mathematics
+- source: ARXIV
+  value: math.ho
+  category: mathematics
+- source: ARXIV
+  value: math.oa
+  category: mathematics
+- source: ARXIV
+  value: nlin.ao
+  category: physics
+- source: ARXIV
+  value: nlin.cd
+  category: physics
+- source: ARXIV
+  value: nlin.cg
+  category: physics
+- source: ARXIV
+  value: nlin.ps
+  category: physics
+- source: ARXIV
+  value: nlin.si
+  category: physics
+- source: ARXIV
+  value: physics.atom-ph
+  category: physics
+- source: ARXIV
+  value: physics.ed-ph
+  category: physics
+- source: ARXIV
+  value: quant-ph
+  category: physics

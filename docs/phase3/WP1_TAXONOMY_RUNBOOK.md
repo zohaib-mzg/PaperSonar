@@ -30,20 +30,37 @@ therefore discarded them.
 
 | Change | File | Effect |
 |---|---|---|
-| Taxonomy contract v2 | `config/taxonomy.yml` | 62 categories in 9 top-level domains (was 22 in 2), 190 weighted rules (was 37), 140 native source mappings (was 0) |
-| Generated seed | `sql/04_categorization/01_seed_taxonomy.sql` | now generated from the contract; also populates `REF_TAXONOMY_MAP` |
+| Taxonomy contract v3 | `config/taxonomy.yml` | 67 categories in 10 top-level domains (was 22 in 2), 782 weighted rules (was 37), 261 native source mappings (was 0) |
+| Generated seed | `sql/04_categorization/01_seed_taxonomy.sql` | now generated from the contract; also populates `REF_TAXONOMY_MAP`; deactivates every row whose version is not the current one |
 | Seed generator | `scripts/generate_taxonomy_seed.py` | `python scripts/generate_taxonomy_seed.py` regenerates the seed byte-for-byte |
-| Categorization procedure | `sql/04_categorization/02_categorize_batch.sql` | adds the `SOURCE_TAXONOMY` method; native taxonomy matches outrank keyword matches; short keyword patterns now respect token boundaries on native values too |
+| Categorization procedure | `sql/04_categorization/02_categorize_batch.sql` | reads native taxonomy values as structured parts (topic name, OpenAlex domain/subfield/field), matches on word boundaries, and ranks the most specific native value first |
 | Category dimension | `sql/05_dimensions/04_load_dimensions.sql` | `DIM_CATEGORY` is now merged (label, parent and taxonomy version are refreshed), not insert-only |
 | Vocabulary mining | `sql/99_tests/04_taxonomy_vocabulary.sql` | read-only queries that measure the native vocabulary and the current coverage |
-| Contracts | `tests/sql/test_sql_contracts.py` | seed reproducibility, mapping parity, ranking order, domain coverage |
+| Contracts | `tests/sql/test_sql_contracts.py` | seed reproducibility, mapping parity, ranking order, domain coverage, version deactivation, boundary semantics |
 
 Ranking order after the change:
 
 1. operator override (`CATEGORY_OVERRIDE`, score 1000);
-2. native source taxonomy match (`REF_TAXONOMY_MAP`, score 2 × weight);
+2. native source taxonomy match (`REF_TAXONOMY_MAP`, score 2 × weight + specificity);
 3. keyword/topic score (title ×3, native topic ×2, per-rule weight);
 4. `unclassified` default.
+
+### 2.1 What the v2 mining run proved
+
+The V0–V6 run on 2026-11-22 (saved under `res/`) produced three findings that
+drove the v3 contract:
+
+| Finding | Evidence | Consequence in v3 |
+|---|---|---|
+| OpenAlex topics are JSON objects, so the topic token was the whole object | V1 values start with `{"display_name":` | the procedure now reads the topic name, the OpenAlex domain, the subfield and the field as four separate candidate values |
+| Substring matching mixed lookalike words | `cultural` fired on `agricultural and biological sciences`, `art` fired on `plant science` | every pattern is now a whole word or phrase and matches on a word boundary; the v2 stems (`ecolog`, `astron`, `pharmac`) were expanded into their word forms |
+| Crossref carries no subject field at all | V0: `CROSSREF, 49093, 0, 0.0000` | Crossref can only be classified from its title, so the v3 title rules were extended with the chemistry, materials and medicine vocabulary found in the sampled Crossref titles (V5) |
+
+Measured against the mined corpus, v3 raises the expected coverage of the
+topic-based sources from 12% (Zenodo), 78% (arXiv) and 98% (OpenAlex, with
+the misclassifications) to **100% (OpenAlex), 100% (arXiv) and 23.5% (Zenodo)**;
+the title rules reach a further ~18% of the currently unclassified outputs.
+Crossref has no native taxonomy, so its ceiling is set by title coverage.
 
 ## 3. Owner actions
 
@@ -57,6 +74,20 @@ workflow manually:
 The deploy runs the contract tests first and deploys `sql/**`. The new seed and
 the categorization procedure take effect immediately; existing data is not
 changed by the deployment itself.
+
+After the deployment, verify the seed landed:
+
+```sql
+SELECT 'categories' AS OBJECT, COUNT(*) AS ROWS FROM PAPERSONAR.PROJECT_REF.REF_CATEGORY WHERE IS_ACTIVE
+UNION ALL SELECT 'rules', COUNT(*) FROM PAPERSONAR.PROJECT_REF.REF_CATEGORY_KEYWORD WHERE IS_ACTIVE
+UNION ALL SELECT 'mappings', COUNT(*) FROM PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP WHERE IS_ACTIVE
+UNION ALL SELECT 'stale_rules', COUNT(*) FROM PAPERSONAR.PROJECT_REF.REF_CATEGORY_KEYWORD WHERE NOT IS_ACTIVE
+UNION ALL SELECT 'stale_mappings', COUNT(*) FROM PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP WHERE NOT IS_ACTIVE;
+```
+
+Expected: 67 categories, 782 active rules, 261 active mappings, and the stale
+v2 rows inactive (their count is however many v2 rows the new version did not
+rewrite, normally 0 because the rule identifiers are reused).
 
 ### 3.2 Mine the native vocabulary (before re-categorizing)
 
@@ -155,7 +186,7 @@ never block publication.
 |---|---|
 | DQ-009 coverage per published batch | ≥ 0.60, or a measured ceiling that is documented with its reason |
 | No CRITICAL DQ failure after re-categorization | 0 (DQ-012 especially: exactly one primary category per output) |
-| `DIM_CATEGORY` rows | 62 categories + the unknown member, with `PARENT_KEY` populated from the v2 tree |
+| `DIM_CATEGORY` rows | 67 categories + the unknown member, with `PARENT_KEY` populated from the v3 tree |
 | Every published batch still `PUBLISHED` | yes, with an updated `PUBLISHED_AT` |
 | Reproducibility | `python scripts/generate_taxonomy_seed.py` produces no diff |
 
@@ -170,9 +201,9 @@ The taxonomy version lives in the reference tables, so a rollback is a data
 change, not a code change:
 
 ```sql
--- Disable the v2 taxonomy rules and mappings (keeps the audit trail)
-UPDATE PAPERSONAR.PROJECT_REF.REF_CATEGORY_KEYWORD SET IS_ACTIVE = FALSE WHERE RULE_VERSION = 'v2';
-UPDATE PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP SET IS_ACTIVE = FALSE WHERE MAPPING_VERSION = 'v2';
+-- Disable the v3 taxonomy rules and mappings (keeps the audit trail)
+UPDATE PAPERSONAR.PROJECT_REF.REF_CATEGORY_KEYWORD SET IS_ACTIVE = FALSE WHERE RULE_VERSION = 'v3';
+UPDATE PAPERSONAR.PROJECT_REF.REF_TAXONOMY_MAP SET IS_ACTIVE = FALSE WHERE MAPPING_VERSION = 'v3';
 ```
 
 Then re-run §3.3 for the affected batches. The code change itself is reverted
