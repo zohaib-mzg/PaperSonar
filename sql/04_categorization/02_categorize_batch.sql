@@ -114,15 +114,15 @@ BEGIN
       LATERAL FLATTEN(input => s.TOPICS) t,
       LATERAL FLATTEN(
         input => ARRAY_COMPACT([
-          IFF(t.value:display_name::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 4, 'value', t.value:display_name::STRING), NULL),
-          IFF(t.value:subfield:display_name::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 3, 'value', t.value:subfield:display_name::STRING), NULL),
-          IFF(t.value:field:display_name::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 2, 'value', t.value:field:display_name::STRING), NULL),
-          IFF(t.value:domain:display_name::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 1, 'value', t.value:domain:display_name::STRING), NULL),
-          IFF(t.value:display_name::STRING IS NULL,
+          IFF(GET(t.value, 'display_name')::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 4, 'value', GET(t.value, 'display_name')::STRING), NULL),
+          IFF(GET(GET(t.value, 'subfield'), 'display_name')::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 3, 'value', GET(GET(t.value, 'subfield'), 'display_name')::STRING), NULL),
+          IFF(GET(GET(t.value, 'field'), 'display_name')::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 2, 'value', GET(GET(t.value, 'field'), 'display_name')::STRING), NULL),
+          IFF(GET(GET(t.value, 'domain'), 'display_name')::STRING IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 1, 'value', GET(GET(t.value, 'domain'), 'display_name')::STRING), NULL),
+          IFF(GET(t.value, 'display_name')::STRING IS NULL,
               OBJECT_CONSTRUCT('level', 0, 'value', t.value::STRING), NULL)
         ])
       ) part
@@ -155,7 +155,7 @@ BEGIN
     SELECT
       tt.OUTPUT_BK,
       m.CATEGORY_KEY,
-      MAX(m.BASE_WEIGHT * 2 + tt.LEVEL) AS SCORE
+      MAX(2 + tt.LEVEL) AS SCORE
     FROM topic_tokens tt
     JOIN (
       SELECT SOURCE_NAME,
