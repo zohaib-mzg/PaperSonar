@@ -84,17 +84,38 @@ ALTER USER SVC_PAPERSONAR SET DEFAULT_WAREHOUSE = 'WH_PAPERSONAR_ELT';
 -- ---------------------------------------------------------------------------
 -- 4. Remove the unused warehouse and stop the account default one.
 --
--- PAPERSONAR_WH was created in Phase 1 and superseded by WH_PAPERSONAR_ELT;
--- nothing references it. COMPUTE_WH is the Snowflake account default
--- warehouse: the project never uses it, but it was left running by the
--- account provisioning and it consumes credits while it is running.
+-- Step 4a - make sure the project warehouse is the account default. A
+-- warehouse that holds the account default role is often refused by
+-- "ALTER WAREHOUSE ... SUSPEND" with "Invalid state. Warehouse 'COMPUTE_WH'
+-- cannot be suspended.", because suspending it would leave the account
+-- without a default warehouse. Changing the default first is the fix, and it
+-- is the right setting for the project in any case.
+--
+-- Step 4b - suspend it. If the account default was not the blocker and the
+-- warehouse still refuses to suspend, fall back to 4c.
+--
+-- Step 4c - the fallback that always works: a short auto-suspend plus the
+-- project resource monitor. With AUTO_SUSPEND the warehouse stops itself
+-- within about 30 seconds of the last query, and the resource monitor caps
+-- the monthly credits even if something resumes it.
 -- ---------------------------------------------------------------------------
+USE ROLE ACCOUNTADMIN;
+
 DROP WAREHOUSE IF EXISTS PAPERSONAR_WH;
+
+SHOW PARAMETERS LIKE 'DEFAULT_WAREHOUSE' IN ACCOUNT;
+
+ALTER ACCOUNT SET DEFAULT_WAREHOUSE = 'WH_PAPERSONAR_ELT';
 
 ALTER WAREHOUSE COMPUTE_WH SUSPEND;
 
+-- Fallback, only if the statement above still reports "Invalid state":
+-- ALTER WAREHOUSE COMPUTE_WH SET AUTO_SUSPEND = 60;
+-- ALTER WAREHOUSE COMPUTE_WH SET RESOURCE_MONITOR = 'RM_PAPERSONAR_ELT';
+
 -- Verification
 SHOW WAREHOUSES;
+SHOW PARAMETERS LIKE 'DEFAULT_WAREHOUSE' IN ACCOUNT;
 
 -- ---------------------------------------------------------------------------
 -- 5. Final check.
