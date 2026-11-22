@@ -25,7 +25,6 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.platypus import (
-    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -100,7 +99,6 @@ def _build_pdf() -> None:
     for heading, lines in _sections(_read_report()):
         if not heading:
             continue
-        level = 1 if heading.startswith("PaperSonar Insights") else 2
         if heading.startswith("PaperSonar Insights"):
             story.append(Paragraph(_strip_markdown(heading), title_style))
         elif heading.startswith("## "):
@@ -143,7 +141,6 @@ def _build_pdf() -> None:
 
 
 def _pdf_table(rows: list[list[str]], cell_style: ParagraphStyle) -> Table:
-    width = max(len(row) for row in rows)
     table = Table(
         [[Paragraph(_strip_markdown(cell), cell_style) for cell in row] for row in rows],
         repeatRows=1,
