@@ -23,6 +23,7 @@ DECLARE
   critical_failures  NUMBER DEFAULT 0;
   total_failures     NUMBER DEFAULT 0;
   republish_mode     BOOLEAN DEFAULT FALSE;
+  published_rows     NUMBER DEFAULT 0;
 BEGIN
   SELECT BATCH_ID INTO :batch_id
   FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH
@@ -37,11 +38,11 @@ BEGIN
   -- run did not produce, so they are recorded as SKIPPED with a reason instead
   -- of being reported as failures. They were evaluated when the batch was
   -- published the first time.
-  SELECT EXISTS (
-    SELECT 1
-    FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH
-    WHERE BATCH_ID = :batch_id
-  ) INTO :republish_mode;
+  SELECT COUNT(*) INTO :published_rows
+  FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH
+  WHERE BATCH_ID = :batch_id;
+
+  republish_mode := :published_rows > 0;
 
   DELETE FROM PAPERSONAR.PROJECT_AUDIT.DQ_RESULT WHERE BATCH_ID = :batch_id;
 

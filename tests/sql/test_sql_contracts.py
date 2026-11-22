@@ -519,6 +519,12 @@ def test_dq_skips_ingestion_rules_when_a_batch_is_republished() -> None:
     assert "FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH" in procedure, (
         "the re-publication mode must be detected from the published batch"
     )
+    assert "republish_mode := :published_rows > 0;" in procedure, (
+        "the re-publication flag must be assigned from a counted value"
+    )
+    assert "SELECT EXISTS (" not in procedure, (
+        "Snowflake scripting does not allow SELECT EXISTS ... INTO a variable"
+    )
     assert "IFF(:republish_mode, 'SKIPPED'" in procedure, (
         "the ingestion reconciliation rules must be skipped in re-publication mode"
     )
