@@ -14,8 +14,9 @@
 --          docs/phase3/evidence/01_queries/Q08_institution_concentration.csv.
 -- Idempotent: Yes - SELECT only.
 -- Owner: PAPERSONAR_REPORTER (read-only).
--- Parameters: year window 2021-2025 (Q06/Q07/Q08) and the top-5 window for
---             the concentration ratio (Q08).
+-- Parameters: year window 2021-2025 (Q06) and the top-5 window for the
+--             concentration ratio (Q08). Q07 and Q08 cover the whole published
+--             corpus and report the publication year as a dimension.
 -- Cost: bridge joins over about 265k outputs and 600k author links.
 -- Deploy: manual - analytical query, run it from a worksheet.
 -- =============================================================================
@@ -87,6 +88,10 @@ ORDER BY MISSING_VENUE_SHARE DESC, TOPIC_WORKS DESC;
 -- Analysis. Roll institution to country and compare years.
 -- Limit. Deduplicate institutions across authors before assigning weights.
 --        Unknown affiliations form a visible coverage category.
+-- Scope. The whole published corpus, sliced by publication year. Affiliation
+--        metadata is concentrated in the older OpenAlex and Crossref records,
+--        so a 2021-2025 window would return an empty result set and would
+--        describe the metadata rather than the institutions.
 -- ---------------------------------------------------------------------------
 WITH published_output AS (
   SELECT DISTINCT fact.OUTPUT_SK
@@ -111,7 +116,6 @@ output_year AS (
   FROM PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT fact
   JOIN published_output output
     ON output.OUTPUT_SK = fact.OUTPUT_SK
-  WHERE fact.PUBLICATION_YEAR BETWEEN 2021 AND 2025
 ),
 output_institution AS (
   SELECT DISTINCT
@@ -164,6 +168,7 @@ ORDER BY output_category.CATEGORY_KEY,
 -- Analysis. Dice by year, topic and country.
 -- Limit. Compute the top five after filtering. Exclude unknown institutions
 --        from ranking and disclose their publication share.
+-- Scope. The whole published corpus, sliced by publication year, as in Q07.
 -- ---------------------------------------------------------------------------
 WITH published_output AS (
   SELECT DISTINCT fact.OUTPUT_SK
@@ -188,7 +193,6 @@ output_year AS (
   FROM PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT fact
   JOIN published_output output
     ON output.OUTPUT_SK = fact.OUTPUT_SK
-  WHERE fact.PUBLICATION_YEAR BETWEEN 2021 AND 2025
 ),
 output_institution AS (
   SELECT DISTINCT
