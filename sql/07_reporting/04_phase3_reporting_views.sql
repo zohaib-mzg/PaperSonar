@@ -170,6 +170,7 @@ WITH output_category AS (
 ),
 pair AS (
   SELECT
+    left_side.OUTPUT_SK,
     left_side.CATEGORY_KEY AS CATEGORY_KEY_A,
     right_side.CATEGORY_KEY AS CATEGORY_KEY_B
   FROM output_category left_side
@@ -268,7 +269,7 @@ JOIN published_output
   ON published_output.OUTPUT_SK = credit.OUTPUT_SK
 JOIN PAPERSONAR.PROJECT_DW.DIM_INSTITUTION institution
   ON institution.INSTITUTION_SK = credit.INSTITUTION_SK
-GROUP BY 1, 2, 3, 4, 5, 6, 7, 9
+GROUP BY 1, 2, 3, 4, 5, 6, 7, 10
 ORDER BY 5, 7, FRACTIONAL_CREDIT DESC;
 
 GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_TOPIC_GROWTH
