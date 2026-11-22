@@ -443,10 +443,13 @@ def test_categorization_ranks_native_taxonomy_above_keywords() -> None:
     assert "CONTAINS(tt.TOKEN, k.PATTERN)" not in procedure, (
         "keyword patterns must not match inside a longer word"
     )
-    assert "GET(t.value, 'display_name')" in procedure, (
+    assert "CASE WHEN IS_OBJECT(t.value) THEN GET(t.value, 'display_name')::STRING END" in procedure, (
         "the native taxonomy topic name must be read as a structured value"
     )
-    assert "GET(GET(t.value, 'subfield'), 'display_name')" in procedure, (
+    assert (
+        "CASE WHEN IS_OBJECT(t.value) THEN GET(GET(t.value, 'subfield'), 'display_name')::STRING END"
+        in procedure
+    ), (
         "the native taxonomy subfield must be read as a structured value"
     )
     assert "MAX(2 + tt.LEVEL)" in procedure, (

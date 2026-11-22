@@ -104,26 +104,37 @@ BEGIN
      )
     GROUP BY s.OUTPUT_BK, k.CATEGORY_KEY
   ),
-  topic_parts AS (
+  topic_names AS (
     SELECT
       s.OUTPUT_BK,
       s.SOURCE_NAME,
+      CASE WHEN IS_OBJECT(t.value) THEN GET(t.value, 'display_name')::STRING END AS DISPLAY_NAME,
+      CASE WHEN IS_OBJECT(t.value) THEN GET(GET(t.value, 'subfield'), 'display_name')::STRING END AS SUBFIELD_NAME,
+      CASE WHEN IS_OBJECT(t.value) THEN GET(GET(t.value, 'field'), 'display_name')::STRING END AS FIELD_NAME,
+      CASE WHEN IS_OBJECT(t.value) THEN GET(GET(t.value, 'domain'), 'display_name')::STRING END AS DOMAIN_NAME,
+      t.value::STRING AS PLAIN_VALUE
+    FROM src s,
+      LATERAL FLATTEN(input => s.TOPICS) t
+  ),
+  topic_parts AS (
+    SELECT
+      n.OUTPUT_BK,
+      n.SOURCE_NAME,
       part.value:level::NUMBER AS LEVEL,
       part.value:value::STRING AS RAW_VALUE
-    FROM src s,
-      LATERAL FLATTEN(input => s.TOPICS) t,
+    FROM topic_names n,
       LATERAL FLATTEN(
         input => ARRAY_COMPACT([
-          IFF(GET(t.value, 'display_name')::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 4, 'value', GET(t.value, 'display_name')::STRING), NULL),
-          IFF(GET(GET(t.value, 'subfield'), 'display_name')::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 3, 'value', GET(GET(t.value, 'subfield'), 'display_name')::STRING), NULL),
-          IFF(GET(GET(t.value, 'field'), 'display_name')::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 2, 'value', GET(GET(t.value, 'field'), 'display_name')::STRING), NULL),
-          IFF(GET(GET(t.value, 'domain'), 'display_name')::STRING IS NOT NULL,
-              OBJECT_CONSTRUCT('level', 1, 'value', GET(GET(t.value, 'domain'), 'display_name')::STRING), NULL),
-          IFF(GET(t.value, 'display_name')::STRING IS NULL,
-              OBJECT_CONSTRUCT('level', 0, 'value', t.value::STRING), NULL)
+          IFF(n.DISPLAY_NAME IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 4, 'value', n.DISPLAY_NAME), NULL),
+          IFF(n.SUBFIELD_NAME IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 3, 'value', n.SUBFIELD_NAME), NULL),
+          IFF(n.FIELD_NAME IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 2, 'value', n.FIELD_NAME), NULL),
+          IFF(n.DOMAIN_NAME IS NOT NULL,
+              OBJECT_CONSTRUCT('level', 1, 'value', n.DOMAIN_NAME), NULL),
+          IFF(n.DISPLAY_NAME IS NULL,
+              OBJECT_CONSTRUCT('level', 0, 'value', n.PLAIN_VALUE), NULL)
         ])
       ) part
   ),
