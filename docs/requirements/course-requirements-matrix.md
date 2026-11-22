@@ -1,6 +1,6 @@
 # Requirements traceability matrix v2
 
-This matrix keeps course requirements separate from PaperSonar product scope. Phase 2 items were implemented and live-verified on 2026-11-22; Phase 3 items are planned in `docs/phase3/PHASE3_PLAN.md` and not yet implemented.
+This matrix keeps course requirements separate from PaperSonar product scope. Phase 2 items were implemented and live-verified on 2026-11-22; Phase 3 items are implemented on the `phase3` branch and evidenced in `docs/phase3/evidence/` (query optimization is the only open item).
 
 | Requirement | Phase | PaperSonar response | Evidence / acceptance proof | State |
 |---|---|---|---|---|
@@ -17,12 +17,12 @@ This matrix keeps course requirements separate from PaperSonar product scope. Ph
 | Staging, cleaning, transformations | 2 | `PROJECT_STAGING` / `PROJECT_DW` / `PROJECT_REPORTING` | SQL/Python scripts and run manifests | **Validated** — `sql/01_staging`..`sql/07_reporting`; live batches published for 4 sources |
 | Surrogate-key mapping | 2 | Business/source IDs mapped to dimension keys | Load report and orphan check | **Validated** — `DIMENSION_KEY_MAP` 942,762 rows; DQ-004..DQ-007 orphan checks pass live |
 | Completeness, accuracy, integrity | 2 | Coverage, DOI conflicts, FK orphan checks, count reconciliation, bridge weight tests | Data quality PDF/CSV | **Validated** — 12-rule DQ gate live on every batch, `critical_failures=0` on published batches; DQ-009 coverage remains a Phase 3 gap (4–6% vs 60% target) |
-| Analytical aggregations and 14 questions | 3 | Research-output measures with denominator and coverage | SQL files and validated result extracts | Planned — Phase 3 WP2 |
-| `ROLLUP` and `CUBE` | 3 | Topic taxonomy × year, output type × source, topic × access; appropriate grouping sets | OLAP SQL and result evidence | Planned — Phase 3 WP2 |
-| Reporting views | 3 | `vw_topic_growth`, `vw_output_coverage`, `vw_citation_cohorts`, `vw_topic_intersections`, `vw_research_community` | SQL view definitions | Planned — Phase 3 WP3 |
-| Query optimization | 3 | `EXPLAIN ANALYZE` before/after indexes on representative queries | Indexing report with hardware/data caveats | Planned — Phase 3 WP4 |
-| Power BI three-page minimum example | 3 | Executive research overview, detailed direction analysis, decision/evidence page | PBIX and screenshots | Planned — Phase 3 WP6 |
-| Business insights and final presentation | 3 | Recommendations based on validated outputs, never invented outcomes | PDF report and PPT | Planned — Phase 3 WP7 |
+| Analytical aggregations and 14 questions | 3 | Research-output measures with denominator and coverage | `sql/10_analytics/01..08*.sql`, `docs/phase3/evidence/01_queries/Q01..Q14*.csv`, `docs/phase3/METRIC_CATALOGUE.md` | **Validated** — all 14 queries executed live on 2026-11-22; every result exported and committed |
+| `ROLLUP` and `CUBE` | 3 | Topic taxonomy × year, output type × source, topic × access; appropriate grouping sets | `sql/10_analytics/09_rollup_cube.sql`, `docs/phase3/evidence/02_olap/OLP1..OLP3*.csv`, `docs/phase3/OLAP_NOTES.md` | **Validated** — ROLLUP, CUBE and GROUPING SETS executed live; each row carries GROUPING_ID and subtotal flags |
+| Reporting views | 3 | `VW_TOPIC_GROWTH`, `VW_OUTPUT_COVERAGE`, `VW_CITATION_COHORTS`, `VW_TOPIC_INTERSECTIONS`, `VW_RESEARCH_COMMUNITY` | `sql/07_reporting/04_phase3_reporting_views.sql`, `SHOW VIEWS` output | **Validated** — five SECURE views deployed in `PROJECT_REPORTING`, granted to `PAPERSONAR_REPORTER` |
+| Query optimization | 3 | `EXPLAIN ANALYZE` before/after on representative queries | Indexing report with hardware/data caveats | **In progress** — benchmark harness `sql/10_analytics/10_optimization_benchmark.sql` and the measured clustering change `sql/06_facts/03_phase3_clustering.sql`; report in `docs/phase3/OPTIMIZATION_REPORT.md` |
+| Power BI three-page minimum example | 3 | Executive research overview, detailed direction analysis, decision/evidence page | `docs/phase3/POWERBI_SPEC.md` (pages, visuals, DAX measures, caveats) | **Specification delivered** — page images and the PBIX depend on the desktop client, which is outside the warehouse |
+| Business insights and final presentation | 3 | Recommendations based on validated outputs, never invented outcomes | `docs/phase3/INSIGHTS_REPORT.md`, `INSIGHTS_REPORT.pdf`, `INSIGHTS_DECK.pptx`, `docs/phase3/COURSE_MAPPING.md` | **Validated** — seven findings, each traceable to a committed evidence file; no invented measure |
 | Free-only | All | Local PostgreSQL core; free source access; optional Snowflake only when no-cost trial available | Cost assumptions and reproducibility test | Design constraint — live account uses only X-Small standard warehouses on the free trial |
 
 ## Important course interpretation
