@@ -145,6 +145,9 @@ BEGIN
        WHERE RUN_ID = :run_id;
       RETURN 'UNKNOWN_STAGE';
     END IF;
+    IF (stage_status = 'RUNNING') THEN
+      stage_status := 'SUCCEEDED';
+    END IF;
   EXCEPTION
     WHEN OTHER THEN
       UPDATE PAPERSONAR.PROJECT_AUDIT.RUN_LOG
