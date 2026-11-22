@@ -113,42 +113,109 @@ expected effect is large; the mining run is what proves it.
 No source is re-extracted: silver and bronze data are unchanged, only the
 categorization, dimensions, facts, DQ and publication stages are re-run for
 the batch. Run one batch at a time (the cost plan in
-`docs/phase3/PHASE3_PLAN.md` assumes one batch per run):
+`docs/phase3/PHASE3_PLAN.md` assumes one batch per run), starting with the
+smallest batch so that a broken stage is found on 15,505 rows instead of
+168,725.
+
+Order to use: **arXiv → Crossref (20 k) → Crossref (30 k) → Zenodo →
+OpenAlex**.
 
 ```sql
--- Set the batch as the active batch (the stage procedures are batch-scoped)
+-- 0. Session setup
+USE ROLE PAPERSONAR_ADMIN;
+USE WAREHOUSE WH_PAPERSONAR_ELT;
+```
+
+```sql
+-- 1. Claim the batch by hand. SP_CLAIM_BATCH only picks STATUS = 'LOADED'
+--    batches, and these five are already PUBLISHED, so the control table is
+--    set directly. The BATCH row is moved to PROCESSING for the audit trail.
 DELETE FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH;
-INSERT INTO PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH (BATCH_ID) VALUES ('<BATCH_ID>');
+INSERT INTO PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH (BATCH_ID, CLAIMED_AT)
+VALUES ('BATCH_3DF8101D66B0797A217FD877', CURRENT_TIMESTAMP());
+UPDATE PAPERSONAR.PROJECT_AUDIT.BATCH
+   SET STATUS = 'PROCESSING', UPDATED_AT = CURRENT_TIMESTAMP()
+ WHERE BATCH_ID = 'BATCH_3DF8101D66B0797A217FD877';
+```
 
-CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('CATEGORIZE');
-CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('DIMENSIONS');
-CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('FACTS');
-CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('DQ');
-CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('PUBLISH');
+```sql
+-- 2. Run the five stages in order. Each CALL returns its status and writes a
+--    RUN_LOG row; a stage that raises leaves the failure in RUN_LOG and in
+--    BATCH.ERROR_SUMMARY.
+CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('CATEGORIZE');   -- returns CATEGORIZED:<n>
+CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('DIMENSIONS');   -- returns SUCCEEDED
+CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('FACTS');        -- returns SUCCEEDED
+CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('DQ');           -- returns SUCCEEDED
+CALL PAPERSONAR.PROJECT_AUDIT.SP_RUN_STAGE('PUBLISH');      -- returns SUCCEEDED
+```
 
--- Release the claim
+`DIMENSIONS` must run before `FACTS`: the category bridge is written by the
+facts stage and joins `DIM_CATEGORY`, which is where the four new v3
+categories (`botany`, `entomology`, `formal-methods`, `research-methods`) are
+created. `PUBLISH` returns `BLOCKED_DQ` and sets the batch to `FAILED` if any
+CRITICAL DQ rule failed, and `BLOCKED_INCOMPLETE_DQ` if the DQ stage did not
+produce one result per active rule.
+
+```sql
+-- 3. Check the categorization before publishing it (optional but cheap:
+--    read-only on the staging table)
+SELECT COUNT(*) AS OUTPUTS,
+       COUNT_IF(c.CATEGORY_KEY <> 'unclassified') AS CATEGORIZED,
+       ROUND(COUNT_IF(c.CATEGORY_KEY <> 'unclassified') / NULLIF(COUNT(*), 0), 4) AS COVERAGE
+FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_CATEGORY c
+WHERE c.BATCH_ID = 'BATCH_3DF8101D66B0797A217FD877' AND c.IS_PRIMARY;
+
+SELECT c.CATEGORY_KEY, c.METHOD, COUNT(*) AS OUTPUTS
+FROM PAPERSONAR.PROJECT_STAGING.STG_OUTPUT_CATEGORY c
+WHERE c.BATCH_ID = 'BATCH_3DF8101D66B0797A217FD877' AND c.IS_PRIMARY
+GROUP BY c.CATEGORY_KEY, c.METHOD
+ORDER BY OUTPUTS DESC;
+```
+
+```sql
+-- 4. Release the claim
 DELETE FROM PAPERSONAR.PROJECT_AUDIT.CURRENT_BATCH;
 ```
 
 Batches to re-run (from the Phase 2 closeout evidence):
 
-| Batch | Source | Records |
-|---|---|---|
-| `BATCH_07D9668D4CBED88D815D30CA` | OPENALEX | 168,725 |
-| `BATCH_B51983B70B26023F22201AE2` | CROSSREF | 20,000 |
-| `BATCH_DAB12A7209208BE375D89C0B` | CROSSREF | 30,000 |
-| `BATCH_3DF8101D66B0797A217FD877` | ARXIV | 15,505 |
-| `BATCH_A75F9C61B9BF73B40CBC8C54` | ZENODO | 54,750 |
+| Order | Batch | Source | Records |
+|---|---|---|---|
+| 1 | `BATCH_3DF8101D66B0797A217FD877` | ARXIV | 15,505 |
+| 2 | `BATCH_B51983B70B26023F22201AE2` | CROSSREF | 20,000 |
+| 3 | `BATCH_DAB12A7209208BE375D89C0B` | CROSSREF | 30,000 |
+| 4 | `BATCH_A75F9C61B9BF73B40CBC8C54` | ZENODO | 54,750 |
+| 5 | `BATCH_07D9668D4CBED88D815D30CA` | OPENALEX | 168,725 |
 
 The stages are idempotent: the category bridge rows of the touched outputs are
 deleted and rebuilt, `DQ_RESULT` rows for the batch are replaced, and
-`PUBLISHED_BATCH` is merged, so the batch stays published.
+`PUBLISHED_BATCH` is merged, so the batch stays published. `FACT_RESEARCH_OUTPUT`
+is merged on the output surrogate key and keeps `LAST_BATCH_ID` equal to the
+same batch, so the reporting views stay complete.
 
 ### 3.4 Measure the result
 
+Run this after every batch, and once more after the last one:
+
 ```sql
+-- a) The DQ-009 gate result per batch (the "after" number)
 SELECT batch.BATCH_ID,
        batch.SOURCE_NAME,
+       result.STATUS,
+       result.OBSERVED_VALUE AS COVERAGE_RATIO,
+       result.THRESHOLD_VALUE AS THRESHOLD,
+       result.CHECKED_AT
+FROM PAPERSONAR.PROJECT_AUDIT.DQ_RESULT result
+JOIN PAPERSONAR.PROJECT_AUDIT.BATCH batch
+  ON batch.BATCH_ID = result.BATCH_ID
+WHERE result.RULE_ID = 'DQ-009'
+ORDER BY batch.SOURCE_NAME, batch.BATCH_ID;
+```
+
+```sql
+-- b) Coverage per source over the published corpus (same shape as the V2
+--    "before" export, so the two can be put in one CSV)
+SELECT batch.SOURCE_NAME,
        COUNT(DISTINCT fact.OUTPUT_SK) AS OUTPUTS,
        COUNT(DISTINCT IFF(bridge.CATEGORY_KEY <> 'unclassified', fact.OUTPUT_SK, NULL)) AS CATEGORIZED,
        ROUND(
@@ -159,8 +226,64 @@ JOIN PAPERSONAR.PROJECT_AUDIT.BATCH batch
   ON batch.BATCH_ID = fact.LAST_BATCH_ID
 LEFT JOIN PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY bridge
   ON bridge.OUTPUT_SK = fact.OUTPUT_SK AND bridge.IS_PRIMARY
-GROUP BY batch.BATCH_ID, batch.SOURCE_NAME
+GROUP BY batch.SOURCE_NAME
 ORDER BY OUTPUTS DESC;
+```
+
+```sql
+-- c) The new primary-category distribution. The v2 run put 175,415 topic
+--    occurrences into arts-and-culture because "cultural" matched inside
+--    "agricultural and biological sciences"; that false positive must be gone.
+SELECT bridge.CATEGORY_KEY,
+       category.LABEL,
+       bridge.METHOD,
+       COUNT(*) AS OUTPUTS
+FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY bridge
+JOIN PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT fact
+  ON fact.OUTPUT_SK = bridge.OUTPUT_SK
+JOIN PAPERSONAR.PROJECT_DW.DIM_CATEGORY category
+  ON category.CATEGORY_SK = bridge.CATEGORY_SK
+WHERE bridge.IS_PRIMARY
+  AND EXISTS (
+    SELECT 1
+    FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH published
+    WHERE published.BATCH_ID = fact.LAST_BATCH_ID
+  )
+GROUP BY bridge.CATEGORY_KEY, category.LABEL, bridge.METHOD
+ORDER BY OUTPUTS DESC;
+```
+
+```sql
+-- d) Integrity: exactly one primary category per output, no duplicate bridge
+--    rows, every batch still published
+SELECT COUNT(*) AS OUTPUTS_WITHOUT_EXACTLY_ONE_PRIMARY
+FROM (
+  SELECT fact.OUTPUT_SK,
+         COUNT(IFF(bridge.IS_PRIMARY, 1, NULL)) AS PRIMARY_COUNT
+  FROM PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT fact
+  LEFT JOIN PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY bridge
+    ON bridge.OUTPUT_SK = fact.OUTPUT_SK
+  GROUP BY fact.OUTPUT_SK
+) counts
+WHERE counts.PRIMARY_COUNT <> 1;
+
+SELECT COUNT(*) AS DUPLICATE_BRIDGE_ROWS
+FROM (
+  SELECT OUTPUT_SK, CATEGORY_KEY
+  FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_TOPIC_CATEGORY
+  GROUP BY OUTPUT_SK, CATEGORY_KEY
+  HAVING COUNT(*) > 1
+) duplicates;
+
+SELECT b.BATCH_ID, b.SOURCE_NAME, b.STATUS, p.PUBLISHED_AT
+FROM PAPERSONAR.PROJECT_AUDIT.BATCH b
+LEFT JOIN PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH p ON p.BATCH_ID = b.BATCH_ID
+WHERE b.BATCH_ID IN (
+  'BATCH_07D9668D4CBED88D815D30CA', 'BATCH_B51983B70B26023F22201AE2',
+  'BATCH_DAB12A7209208BE375D89C0B', 'BATCH_3DF8101D66B0797A217FD877',
+  'BATCH_A75F9C61B9BF73B40CBC8C54'
+)
+ORDER BY b.SOURCE_NAME;
 ```
 
 Save the result to `docs/phase3/evidence/00_taxonomy/DQ009_before_after.csv`
