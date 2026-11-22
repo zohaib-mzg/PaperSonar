@@ -10,9 +10,13 @@
 --          docs/phase3/evidence/01_queries/Q11_topic_citation_flow.csv.
 -- Idempotent: Yes - SELECT only.
 -- Owner: PAPERSONAR_REPORTER (read-only).
--- Parameters: year window 2021-2025 for the citing endpoint.
--- Cost: joins the relation fact (about 1.8m rows) to the primary category of
---       both endpoints; run on WH_PAPERSONAR_ELT outside peak time.
+-- Parameters: no fixed year window. The induced subgraph of the published
+--             corpus is reported with the publication year of the citing
+--             endpoint, because the citation edges of this corpus sit outside
+--             the 2021-2025 window that the cohort questions use.
+-- Cost: joins the relation fact (about 2.6m rows, of which about 95k have a
+--       resolved target inside the corpus) to the primary category of both
+--       endpoints; run on WH_PAPERSONAR_ELT outside peak time.
 -- Deploy: manual - analytical query, run it from a worksheet.
 -- =============================================================================
 -- The relation fact keeps unresolved targets as identifiers; only edges whose
@@ -62,13 +66,13 @@ citing_output AS (
     ON cited.OUTPUT_SK = relation.TARGET_OUTPUT_SK
   WHERE relation.RELATION_TYPE = 'REFERENCES'
     AND relation.TARGET_OUTPUT_SK IS NOT NULL
-    AND fact.PUBLICATION_YEAR BETWEEN 2021 AND 2025
 )
 SELECT
   citing_category.CATEGORY_KEY      AS CITING_TOPIC,
   citing_category.CATEGORY_LABEL    AS CITING_TOPIC_LABEL,
   cited_category.CATEGORY_KEY       AS CITED_TOPIC,
   cited_category.CATEGORY_LABEL     AS CITED_TOPIC_LABEL,
+  citing.CITING_YEAR,
   COUNT(*)                          AS CITATION_PAIRS,
   COUNT(DISTINCT citing.CITING_OUTPUT_SK) AS CITING_OUTPUTS,
   COUNT(DISTINCT citing.CITED_OUTPUT_SK)  AS CITED_OUTPUTS,
@@ -78,7 +82,7 @@ JOIN primary_category citing_category
   ON citing_category.OUTPUT_SK = citing.CITING_OUTPUT_SK
 JOIN primary_category cited_category
   ON cited_category.OUTPUT_SK = citing.CITED_OUTPUT_SK
-GROUP BY 1, 2, 3, 4
+GROUP BY 1, 2, 3, 4, 5
 ORDER BY CITATION_PAIRS DESC;
 
 -- ---------------------------------------------------------------------------

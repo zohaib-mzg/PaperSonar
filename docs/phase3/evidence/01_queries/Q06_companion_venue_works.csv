@@ -1,0 +1,51 @@
+CATEGORY_KEY,CATEGORY_LABEL,TOPIC_WORKS,WORKS_WITHOUT_VENUE,MISSING_VENUE_SHARE,RETRIEVED_ON
+education,Education,27,2,0.074074,2026-11-22
+economics,Economics and Finance,42,2,0.047619,2026-11-22
+law,Law,165,0,0.000000,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,111,0,0.000000,2026-11-22
+mathematics,Mathematics,57,0,0.000000,2026-11-22
+physics,Physics,55,0,0.000000,2026-11-22
+clinical-medicine,Clinical Medicine,54,0,0.000000,2026-11-22
+health-sciences,Health Sciences,52,0,0.000000,2026-11-22
+materials-science,Materials Science,33,0,0.000000,2026-11-22
+environmental-science,Environmental Science,32,0,0.000000,2026-11-22
+computer-science,Computer Science,23,0,0.000000,2026-11-22
+astronomy,Astronomy and Astrophysics,21,0,0.000000,2026-11-22
+history,History,20,0,0.000000,2026-11-22
+ecology,Ecology,20,0,0.000000,2026-11-22
+botany,Botany and Plant Science,20,0,0.000000,2026-11-22
+arts-and-culture,Arts and Culture,19,0,0.000000,2026-11-22
+management,Management and Business,16,0,0.000000,2026-11-22
+genetics,Genetics and Genomics,15,0,0.000000,2026-11-22
+chemistry,Chemistry,15,0,0.000000,2026-11-22
+psychology,Psychology,14,0,0.000000,2026-11-22
+statistics,Statistics and Probability,13,0,0.000000,2026-11-22
+energy-engineering,Energy Engineering,13,0,0.000000,2026-11-22
+linguistics,Linguistics,12,0,0.000000,2026-11-22
+climate-science,Climate Science,9,0,0.000000,2026-11-22
+security-privacy,Security and Privacy,9,0,0.000000,2026-11-22
+literature,Literature,6,0,0.000000,2026-11-22
+life-sciences,Life Sciences,6,0,0.000000,2026-11-22
+political-science,Political Science,5,0,0.000000,2026-11-22
+distributed-systems,Distributed Systems,5,0,0.000000,2026-11-22
+public-health,Public Health,4,0,0.000000,2026-11-22
+neuroscience,Neuroscience,4,0,0.000000,2026-11-22
+software-engineering,Software Engineering,4,0,0.000000,2026-11-22
+research-methods,Research Methods and Reproducibility,4,0,0.000000,2026-11-22
+microbiology,Microbiology,4,0,0.000000,2026-11-22
+geosciences,Geosciences,3,0,0.000000,2026-11-22
+engineering-and-technology,Engineering and Technology,3,0,0.000000,2026-11-22
+data-engineering,Data Engineering,3,0,0.000000,2026-11-22
+philosophy,Philosophy,3,0,0.000000,2026-11-22
+human-computer-interaction,Human-Computer Interaction,3,0,0.000000,2026-11-22
+databases,Databases,2,0,0.000000,2026-11-22
+formal-methods,Formal Methods and Verification,2,0,0.000000,2026-11-22
+mental-health,Mental Health,2,0,0.000000,2026-11-22
+developer-tools,Developer Tools,2,0,0.000000,2026-11-22
+sociology,Sociology,2,0,0.000000,2026-11-22
+entomology,Entomology,1,0,0.000000,2026-11-22
+biomedical-engineering,Biomedical Engineering,1,0,0.000000,2026-11-22
+epidemiology,Epidemiology,1,0,0.000000,2026-11-22
+earth-and-environment,Earth and Environmental Sciences,1,0,0.000000,2026-11-22
+llm,Large Language Models,1,0,0.000000,2026-11-22
+civil-engineering,Civil and Mechanical Engineering,1,0,0.000000,2026-11-22

@@ -1,0 +1,150 @@
+CATEGORY_KEY,CATEGORY_LABEL,VENUE_NAME,WORKS,TOPIC_WORKS_2021_2025,SHARE_OF_TOPIC_WORKS,RETRIEVED_ON
+ai-ml,Artificial Intelligence and Machine Learning,arXiv,82,111,0.738739,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,zenodo,20,111,0.180180,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,UBAK Yayınevi,2,111,0.018018,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",2,111,0.018018,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,ABPE,1,111,0.009009,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,RSSB Publications,1,111,0.009009,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,IEEE,1,111,0.009009,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,Emro Science and Education,1,111,0.009009,2026-11-22
+ai-ml,Artificial Intelligence and Machine Learning,"Journal of ICT, Design, Engineering and Technological Science",1,111,0.009009,2026-11-22
+arts-and-culture,Arts and Culture,zenodo,8,19,0.421053,2026-11-22
+arts-and-culture,Arts and Culture,SKASE - The Slovak Association for the Study of English,6,19,0.315789,2026-11-22
+arts-and-culture,Arts and Culture,Arandura,1,19,0.052632,2026-11-22
+arts-and-culture,Arts and Culture,Humano y divino,1,19,0.052632,2026-11-22
+arts-and-culture,Arts and Culture,International Computer Music Association,1,19,0.052632,2026-11-22
+arts-and-culture,Arts and Culture,Il Sileno Edizioni,1,19,0.052632,2026-11-22
+arts-and-culture,Arts and Culture,The Eurographics Association,1,19,0.052632,2026-11-22
+astronomy,Astronomy and Astrophysics,arXiv,19,21,0.904762,2026-11-22
+astronomy,Astronomy and Astrophysics,The Luminary Learning Institute (SMC-Private) Limited.,1,21,0.047619,2026-11-22
+astronomy,Astronomy and Astrophysics,zenodo,1,21,0.047619,2026-11-22
+biomedical-engineering,Biomedical Engineering,arXiv,1,1,1.000000,2026-11-22
+botany,Botany and Plant Science,zenodo,11,20,0.550000,2026-11-22
+botany,Botany and Plant Science,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",9,20,0.450000,2026-11-22
+chemistry,Chemistry,arXiv,7,15,0.466667,2026-11-22
+chemistry,Chemistry,zenodo,6,15,0.400000,2026-11-22
+chemistry,Chemistry,THE LUMINARY LEARNING INSTITUTE (SMC-PRIVATE) LIMITED,1,15,0.066667,2026-11-22
+chemistry,Chemistry,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",1,15,0.066667,2026-11-22
+civil-engineering,Civil and Mechanical Engineering,zenodo,1,1,1.000000,2026-11-22
+climate-science,Climate Science,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",6,9,0.666667,2026-11-22
+climate-science,Climate Science,zenodo,2,9,0.222222,2026-11-22
+climate-science,Climate Science,THE LUMINARY LEARNING INSTITUTE (SMC-PRIVATE) LIMITED,1,9,0.111111,2026-11-22
+clinical-medicine,Clinical Medicine,zenodo,47,54,0.870370,2026-11-22
+clinical-medicine,Clinical Medicine,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",4,54,0.074074,2026-11-22
+clinical-medicine,Clinical Medicine,ScienceVolks Open Access,3,54,0.055556,2026-11-22
+computer-science,Computer Science,arXiv,21,23,0.913043,2026-11-22
+computer-science,Computer Science,zenodo,1,23,0.043478,2026-11-22
+computer-science,Computer Science,Dnipro University of Technology,1,23,0.043478,2026-11-22
+data-engineering,Data Engineering,zenodo,2,3,0.666667,2026-11-22
+data-engineering,Data Engineering,Nukus davlat texnika universiteti,1,3,0.333333,2026-11-22
+databases,Databases,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",1,2,0.500000,2026-11-22
+databases,Databases,arXiv,1,2,0.500000,2026-11-22
+developer-tools,Developer Tools,zenodo,2,2,1.000000,2026-11-22
+distributed-systems,Distributed Systems,arXiv,4,5,0.800000,2026-11-22
+distributed-systems,Distributed Systems,zenodo,1,5,0.200000,2026-11-22
+earth-and-environment,Earth and Environmental Sciences,Natural Resources Canada,1,1,1.000000,2026-11-22
+ecology,Ecology,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",13,20,0.650000,2026-11-22
+ecology,Ecology,zenodo,7,20,0.350000,2026-11-22
+economics,Economics and Finance,Entrepreneurial Mindset Network,18,42,0.428571,2026-11-22
+economics,Economics and Finance,zenodo,11,42,0.261905,2026-11-22
+economics,Economics and Finance,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",7,42,0.166667,2026-11-22
+economics,Economics and Finance,arXiv,2,42,0.047619,2026-11-22
+economics,Economics and Finance,Unknown,2,42,0.047619,2026-11-22
+economics,Economics and Finance,MDPI,1,42,0.023810,2026-11-22
+economics,Economics and Finance,American serial,1,42,0.023810,2026-11-22
+education,Education,zenodo,10,27,0.370370,2026-11-22
+education,Education,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",4,27,0.148148,2026-11-22
+education,Education,Pädagogische Hochschule Zürich,2,27,0.074074,2026-11-22
+education,Education,Unknown,2,27,0.074074,2026-11-22
+education,Education,Nobel Bilimsel Eserler,1,27,0.037037,2026-11-22
+education,Education,Comparative Research Journal Archieve,1,27,0.037037,2026-11-22
+education,Education,BYABASTHAPAN NEPALESE JOURNAL OF MANAGEMENT,1,27,0.037037,2026-11-22
+education,Education,Liberty Academic Publishers,1,27,0.037037,2026-11-22
+education,Education,Nobel Akademik Yayıncılık,1,27,0.037037,2026-11-22
+education,Education,Entrepreneurial Mindset Network,1,27,0.037037,2026-11-22
+education,Education,ScienceVolks Open Access,1,27,0.037037,2026-11-22
+education,Education,UBAK Yayınevi,1,27,0.037037,2026-11-22
+education,Education,Білоцерківський національний аграрний університет,1,27,0.037037,2026-11-22
+energy-engineering,Energy Engineering,zenodo,8,13,0.615385,2026-11-22
+energy-engineering,Energy Engineering,THE LUMINARY LEARNING INSTITUTE (SMC-PRIVATE) LIMITED,2,13,0.153846,2026-11-22
+energy-engineering,Energy Engineering,Elsevier Ltd.,1,13,0.076923,2026-11-22
+energy-engineering,Energy Engineering,Білоцерківський національний аграрний університет,1,13,0.076923,2026-11-22
+energy-engineering,Energy Engineering,Friedrich-Ebert-Stiftung (FES),1,13,0.076923,2026-11-22
+engineering-and-technology,Engineering and Technology,zenodo,2,3,0.666667,2026-11-22
+engineering-and-technology,Engineering and Technology,Wiley,1,3,0.333333,2026-11-22
+entomology,Entomology,zenodo,1,1,1.000000,2026-11-22
+environmental-science,Environmental Science,zenodo,22,32,0.687500,2026-11-22
+environmental-science,Environmental Science,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",7,32,0.218750,2026-11-22
+environmental-science,Environmental Science,UBAK Yayınevi,1,32,0.031250,2026-11-22
+environmental-science,Environmental Science,Universidade Federal Fluminense,1,32,0.031250,2026-11-22
+environmental-science,Environmental Science,THE LUMINARY LEARNING INSTITUTE (SMC-PRIVATE) LIMITED,1,32,0.031250,2026-11-22
+epidemiology,Epidemiology,zenodo,1,1,1.000000,2026-11-22
+formal-methods,Formal Methods and Verification,Editorial Universidad de Cantabria,1,2,0.500000,2026-11-22
+formal-methods,Formal Methods and Verification,zenodo,1,2,0.500000,2026-11-22
+genetics,Genetics and Genomics,zenodo,14,15,0.933333,2026-11-22
+genetics,Genetics and Genomics,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",1,15,0.066667,2026-11-22
+geosciences,Geosciences,zenodo,2,3,0.666667,2026-11-22
+geosciences,Geosciences,arXiv,1,3,0.333333,2026-11-22
+health-sciences,Health Sciences,zenodo,43,52,0.826923,2026-11-22
+health-sciences,Health Sciences,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",4,52,0.076923,2026-11-22
+health-sciences,Health Sciences,Entrepreneurial Mindset Network,2,52,0.038462,2026-11-22
+health-sciences,Health Sciences,OSF,1,52,0.019231,2026-11-22
+health-sciences,Health Sciences,ScienceVolks Open Access,1,52,0.019231,2026-11-22
+health-sciences,Health Sciences,ЧДТУ,1,52,0.019231,2026-11-22
+history,History,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",12,20,0.600000,2026-11-22
+history,History,zenodo,4,20,0.200000,2026-11-22
+history,History,History of Geology Group,2,20,0.100000,2026-11-22
+history,History,CounterPunch and Library of the Greatest Name,1,20,0.050000,2026-11-22
+history,History,DKNVS,1,20,0.050000,2026-11-22
+human-computer-interaction,Human-Computer Interaction,zenodo,3,3,1.000000,2026-11-22
+law,Law,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",149,165,0.903030,2026-11-22
+law,Law,zenodo,10,165,0.060606,2026-11-22
+law,Law,SKASE - The Slovak Association for the Study of English,4,165,0.024242,2026-11-22
+law,Law,SSRN,1,165,0.006061,2026-11-22
+law,Law,Technoscience Academy,1,165,0.006061,2026-11-22
+life-sciences,Life Sciences,arXiv,6,6,1.000000,2026-11-22
+linguistics,Linguistics,SKASE - The Slovak Association for the Study of English,11,12,0.916667,2026-11-22
+linguistics,Linguistics,Library of the Greatest Name,1,12,0.083333,2026-11-22
+literature,Literature,zenodo,4,6,0.666667,2026-11-22
+literature,Literature,Library of the Greatest Name,2,6,0.333333,2026-11-22
+llm,Large Language Models,SKASE - The Slovak Association for the Study of English,1,1,1.000000,2026-11-22
+management,Management and Business,zenodo,12,16,0.750000,2026-11-22
+management,Management and Business,Entrepreneurial Mindset Network,2,16,0.125000,2026-11-22
+management,Management and Business,"Wydawnictwo Naukowe Kontekst, Kontekst Scientific Publisher",1,16,0.062500,2026-11-22
+management,Management and Business,Zarnevesht Publications (انتشارات زرنوشت),1,16,0.062500,2026-11-22
+materials-science,Materials Science,arXiv,30,33,0.909091,2026-11-22
+materials-science,Materials Science,zenodo,2,33,0.060606,2026-11-22
+materials-science,Materials Science,ACADIA (Association for Computer Aided Design in Architecture),1,33,0.030303,2026-11-22
+mathematics,Mathematics,arXiv,55,57,0.964912,2026-11-22
+mathematics,Mathematics,zenodo,2,57,0.035088,2026-11-22
+mental-health,Mental Health,zenodo,1,2,0.500000,2026-11-22
+mental-health,Mental Health,"Office of Research, Innovation and Commercialization, University of Loralai",1,2,0.500000,2026-11-22
+microbiology,Microbiology,zenodo,3,4,0.750000,2026-11-22
+microbiology,Microbiology,St. Dominic College of Asia,1,4,0.250000,2026-11-22
+neuroscience,Neuroscience,zenodo,2,4,0.500000,2026-11-22
+neuroscience,Neuroscience,Brisart Research Archive,1,4,0.250000,2026-11-22
+neuroscience,Neuroscience,ScienceVolks Open Access,1,4,0.250000,2026-11-22
+philosophy,Philosophy,zenodo,3,3,1.000000,2026-11-22
+physics,Physics,arXiv,33,55,0.600000,2026-11-22
+physics,Physics,zenodo,17,55,0.309091,2026-11-22
+physics,Physics,THE LUMINARY LEARNING INSTITUTE (SMC-PRIVATE) LIMITED,5,55,0.090909,2026-11-22
+political-science,Political Science,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",3,5,0.600000,2026-11-22
+political-science,Political Science,zenodo,1,5,0.200000,2026-11-22
+political-science,Political Science,Ethan journal,1,5,0.200000,2026-11-22
+psychology,Psychology,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",8,14,0.571429,2026-11-22
+psychology,Psychology,zenodo,4,14,0.285714,2026-11-22
+psychology,Psychology,Library of the Greatest Name,2,14,0.142857,2026-11-22
+public-health,Public Health,zenodo,2,4,0.500000,2026-11-22
+public-health,Public Health,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",1,4,0.250000,2026-11-22
+public-health,Public Health,IntechOpen,1,4,0.250000,2026-11-22
+research-methods,Research Methods and Reproducibility,zenodo,4,4,1.000000,2026-11-22
+security-privacy,Security and Privacy,arXiv,6,9,0.666667,2026-11-22
+security-privacy,Security and Privacy,All Sciences Academy,1,9,0.111111,2026-11-22
+security-privacy,Security and Privacy,zenodo,1,9,0.111111,2026-11-22
+security-privacy,Security and Privacy,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",1,9,0.111111,2026-11-22
+sociology,Sociology,zenodo,1,2,0.500000,2026-11-22
+sociology,Sociology,"Pavol Jozef Šafárik University in Košice, ŠafárikPress",1,2,0.500000,2026-11-22
+software-engineering,Software Engineering,arXiv,4,4,1.000000,2026-11-22
+statistics,Statistics and Probability,arXiv,10,13,0.769231,2026-11-22
+statistics,Statistics and Probability,zenodo,2,13,0.153846,2026-11-22
+statistics,Statistics and Probability,THE LUMINARY LEARNING INSTITUTE (SMC-PRIVATE) LIMITED,1,13,0.076923,2026-11-22

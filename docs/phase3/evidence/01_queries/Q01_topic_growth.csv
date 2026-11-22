@@ -1,0 +1,49 @@
+CATEGORY_KEY,CATEGORY_LABEL,PARENT_CATEGORY_KEY,PARENT_CATEGORY_LABEL,FIELD_CATEGORY_LABEL,WORKS_2023,WORKS_2025,ABSOLUTE_GROWTH,GROWTH_RATIO,GROWTH_STATUS,CAGR_2023_2025,SUPPRESSION_THRESHOLD,RETRIEVED_ON
+ai-ml,Artificial Intelligence and Machine Learning,computer-science,Computer Science,,8,69,61,8.6250,SUPPRESSED_LT_30,,30,2026-11-22
+clinical-medicine,Clinical Medicine,health-sciences,Health Sciences,,2,40,38,20.0000,SUPPRESSED_LT_30,,30,2026-11-22
+physics,Physics,natural-sciences,Natural Sciences,,4,37,33,9.2500,SUPPRESSED_LT_30,,30,2026-11-22
+law,Law,humanities,Humanities,,27,32,5,1.1852,SUPPRESSED_LT_30,,30,2026-11-22
+mathematics,Mathematics,natural-sciences,Natural Sciences,,9,28,19,3.1111,SUPPRESSED_LT_30,,30,2026-11-22
+health-sciences,Health Sciences,,,,3,28,25,9.3333,SUPPRESSED_LT_30,,30,2026-11-22
+materials-science,Materials Science,engineering-and-technology,Engineering and Technology,,1,23,22,23.0000,SUPPRESSED_LT_30,,30,2026-11-22
+astronomy,Astronomy and Astrophysics,natural-sciences,Natural Sciences,,1,16,15,16.0000,SUPPRESSED_LT_30,,30,2026-11-22
+environmental-science,Environmental Science,earth-and-environment,Earth and Environmental Sciences,,5,14,9,2.8000,SUPPRESSED_LT_30,,30,2026-11-22
+computer-science,Computer Science,,,,4,14,10,3.5000,SUPPRESSED_LT_30,,30,2026-11-22
+economics,Economics and Finance,social-sciences,Social Sciences,,6,12,6,2.0000,SUPPRESSED_LT_30,,30,2026-11-22
+arts-and-culture,Arts and Culture,,,,4,11,7,2.7500,SUPPRESSED_LT_30,,30,2026-11-22
+genetics,Genetics and Genomics,life-sciences,Life Sciences,,0,10,10,,SUPPRESSED_LT_30,,30,2026-11-22
+education,Education,social-sciences,Social Sciences,,6,10,4,1.6667,SUPPRESSED_LT_30,,30,2026-11-22
+climate-science,Climate Science,earth-and-environment,Earth and Environmental Sciences,,0,9,9,,SUPPRESSED_LT_30,,30,2026-11-22
+chemistry,Chemistry,natural-sciences,Natural Sciences,,4,9,5,2.2500,SUPPRESSED_LT_30,,30,2026-11-22
+linguistics,Linguistics,humanities,Humanities,,2,8,6,4.0000,SUPPRESSED_LT_30,,30,2026-11-22
+management,Management and Business,social-sciences,Social Sciences,,0,7,7,,SUPPRESSED_LT_30,,30,2026-11-22
+energy-engineering,Energy Engineering,engineering-and-technology,Engineering and Technology,,1,6,5,6.0000,SUPPRESSED_LT_30,,30,2026-11-22
+history,History,humanities,Humanities,,4,6,2,1.5000,SUPPRESSED_LT_30,,30,2026-11-22
+botany,Botany and Plant Science,life-sciences,Life Sciences,,8,6,-2,0.7500,SUPPRESSED_LT_30,,30,2026-11-22
+life-sciences,Life Sciences,,,,1,5,4,5.0000,SUPPRESSED_LT_30,,30,2026-11-22
+psychology,Psychology,social-sciences,Social Sciences,,8,5,-3,0.6250,SUPPRESSED_LT_30,,30,2026-11-22
+ecology,Ecology,life-sciences,Life Sciences,,4,4,0,1.0000,SUPPRESSED_LT_30,,30,2026-11-22
+literature,Literature,humanities,Humanities,,0,4,4,,SUPPRESSED_LT_30,,30,2026-11-22
+statistics,Statistics and Probability,natural-sciences,Natural Sciences,,2,4,2,2.0000,SUPPRESSED_LT_30,,30,2026-11-22
+software-engineering,Software Engineering,computer-science,Computer Science,,1,3,2,3.0000,SUPPRESSED_LT_30,,30,2026-11-22
+security-privacy,Security and Privacy,software-engineering,Software Engineering,Computer Science,1,3,2,3.0000,SUPPRESSED_LT_30,,30,2026-11-22
+geosciences,Geosciences,earth-and-environment,Earth and Environmental Sciences,,0,3,3,,SUPPRESSED_LT_30,,30,2026-11-22
+distributed-systems,Distributed Systems,software-engineering,Software Engineering,Computer Science,1,3,2,3.0000,SUPPRESSED_LT_30,,30,2026-11-22
+public-health,Public Health,health-sciences,Health Sciences,,1,2,1,2.0000,SUPPRESSED_LT_30,,30,2026-11-22
+data-engineering,Data Engineering,software-engineering,Software Engineering,Computer Science,1,2,1,2.0000,SUPPRESSED_LT_30,,30,2026-11-22
+political-science,Political Science,social-sciences,Social Sciences,,1,2,1,2.0000,SUPPRESSED_LT_30,,30,2026-11-22
+neuroscience,Neuroscience,life-sciences,Life Sciences,,0,2,2,,SUPPRESSED_LT_30,,30,2026-11-22
+philosophy,Philosophy,humanities,Humanities,,0,2,2,,SUPPRESSED_LT_30,,30,2026-11-22
+sociology,Sociology,social-sciences,Social Sciences,,0,2,2,,SUPPRESSED_LT_30,,30,2026-11-22
+epidemiology,Epidemiology,health-sciences,Health Sciences,,0,1,1,,SUPPRESSED_LT_30,,30,2026-11-22
+biomedical-engineering,Biomedical Engineering,engineering-and-technology,Engineering and Technology,,0,1,1,,SUPPRESSED_LT_30,,30,2026-11-22
+human-computer-interaction,Human-Computer Interaction,software-engineering,Software Engineering,Computer Science,0,1,1,,SUPPRESSED_LT_30,,30,2026-11-22
+developer-tools,Developer Tools,software-engineering,Software Engineering,Computer Science,1,1,0,1.0000,SUPPRESSED_LT_30,,30,2026-11-22
+databases,Databases,software-engineering,Software Engineering,Computer Science,1,1,0,1.0000,SUPPRESSED_LT_30,,30,2026-11-22
+mental-health,Mental Health,health-sciences,Health Sciences,,0,1,1,,SUPPRESSED_LT_30,,30,2026-11-22
+civil-engineering,Civil and Mechanical Engineering,engineering-and-technology,Engineering and Technology,,0,1,1,,SUPPRESSED_LT_30,,30,2026-11-22
+microbiology,Microbiology,life-sciences,Life Sciences,,2,1,-1,0.5000,SUPPRESSED_LT_30,,30,2026-11-22
+llm,Large Language Models,ai-ml,Artificial Intelligence and Machine Learning,Computer Science,0,1,1,,SUPPRESSED_LT_30,,30,2026-11-22
+earth-and-environment,Earth and Environmental Sciences,,,,0,1,1,,SUPPRESSED_LT_30,,30,2026-11-22
+engineering-and-technology,Engineering and Technology,,,,2,1,-1,0.5000,SUPPRESSED_LT_30,,30,2026-11-22
+formal-methods,Formal Methods and Verification,software-engineering,Software Engineering,Computer Science,1,0,-1,0.0000,SUPPRESSED_LT_30,,30,2026-11-22
