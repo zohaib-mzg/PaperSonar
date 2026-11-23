@@ -1,0 +1,907 @@
+{
+    "version":  1,
+    "source":  "docs/agents/chatbot/03_METRIC_CATALOGUE_AND_QUESTIONS.md",
+    "total":  150,
+    "questions":  [
+                      {
+                          "id":  "Q001",
+                          "question":  "Which topics grew fastest in 2025?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q002",
+                          "question":  "Which topics declined in 2025?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q003",
+                          "question":  "Compare AI/ML growth in 2024 vs 2025.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q004",
+                          "question":  "Which topics grew fastest among Crossref outputs?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q005",
+                          "question":  "Which topics grew fastest among OpenAlex outputs?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q006",
+                          "question":  "What is the year-over-year growth of health sciences?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q007",
+                          "question":  "Which topics had the largest absolute increase in works?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q008",
+                          "question":  "Which topics had the largest relative increase?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q009",
+                          "question":  "Which topics are emerging but below the 30-work threshold?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q010",
+                          "question":  "Show the growth trend for physics from 2021 to 2025.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q011",
+                          "question":  "How many works are in AI/ML?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q012",
+                          "question":  "What share of the corpus is AI/ML?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q013",
+                          "question":  "Which topics have the most works?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q014",
+                          "question":  "Which topics have the fewest works?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q015",
+                          "question":  "How many classified vs unclassified works are there?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q016",
+                          "question":  "What is the topic coverage ratio by source?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q017",
+                          "question":  "Which topics appear in only one source?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q018",
+                          "question":  "How many works are unclassified?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q019",
+                          "question":  "What percentage of 2025 works are classified?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q020",
+                          "question":  "Show the top 10 topics by work count.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q021",
+                          "question":  "How many citations does AI/ML have?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q022",
+                          "question":  "What is the average citation count for AI/ML?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q023",
+                          "question":  "What is the median citation count for health sciences?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q024",
+                          "question":  "Which topics have the highest citation impact?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q025",
+                          "question":  "Which topics have the lowest citation impact?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q026",
+                          "question":  "How many citations does RAG have?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q027",
+                          "question":  "Compare citations for AI/ML and physics.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q028",
+                          "question":  "Which AI/ML outputs have the most citations?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q029",
+                          "question":  "What share of AI/ML outputs has zero citations?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q030",
+                          "question":  "What is the citation distribution for 2025 outputs?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q031",
+                          "question":  "How have AI/ML citations changed across snapshots?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q032",
+                          "question":  "Which topics gained the most citations between snapshots?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q033",
+                          "question":  "Which topics lost citation rank?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q034",
+                          "question":  "Compare citation impact for 2024 and 2025 cohorts.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q035",
+                          "question":  "What is the citation trend for arXiv preprints?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q036",
+                          "question":  "Which source has the highest average citations?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q037",
+                          "question":  "Which output type has the highest citation impact?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q038",
+                          "question":  "How many citations per output by publication year?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q039",
+                          "question":  "Which topics have high citations but low volume?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q040",
+                          "question":  "Show citation gains for the top 10 outputs.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q041",
+                          "question":  "Which topic pairs co-occur most?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q042",
+                          "question":  "Do AI/ML and health sciences intersect?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q043",
+                          "question":  "How many works combine AI/ML and physics?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q044",
+                          "question":  "Which topic pairs are reportable?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q045",
+                          "question":  "Which topic pairs are suppressed?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q046",
+                          "question":  "Compare intersections for 2024 and 2025.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q047",
+                          "question":  "Which topics bridge the most domains?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q048",
+                          "question":  "Which topic pairs grew fastest?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q049",
+                          "question":  "What share of AI/ML works also has health sciences?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q050",
+                          "question":  "Show top topic pairs by joint works.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q051",
+                          "question":  "Which source has the highest topic coverage?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q052",
+                          "question":  "Which source has the most works without a DOI?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q053",
+                          "question":  "Which source has the most works without a venue?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q054",
+                          "question":  "Compare coverage for OpenAlex and Crossref.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q055",
+                          "question":  "How many works have a missing publication year?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q056",
+                          "question":  "How many works have a missing author?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q057",
+                          "question":  "How many works have a language value?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q058",
+                          "question":  "Which topics are underrepresented in Crossref?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q059",
+                          "question":  "Which source contributes the most 2025 outputs?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q060",
+                          "question":  "Show metadata completeness by source and year.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q061",
+                          "question":  "Which institutions have the most works?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q062",
+                          "question":  "Which institutions lead AI/ML?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q063",
+                          "question":  "Which institutions lead physics in 2025?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q064",
+                          "question":  "How concentrated is institutional credit?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q065",
+                          "question":  "Which countries have the most works?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q066",
+                          "question":  "Which institutions collaborate most?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q067",
+                          "question":  "Which institutions have the highest citation impact?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q068",
+                          "question":  "Which institutions are active in health sciences?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q069",
+                          "question":  "How many works have a resolved institution?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q070",
+                          "question":  "Show top institutions by topic.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q071",
+                          "question":  "Who are the most prolific authors?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q072",
+                          "question":  "Which authors have the most citations?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q073",
+                          "question":  "Which authors work across multiple topics?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q074",
+                          "question":  "How many repeat authors are there?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q075",
+                          "question":  "Which authors are active in AI/ML?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q076",
+                          "question":  "Which authors publish across the most sources?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q077",
+                          "question":  "How many authors have an ORCID?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q078",
+                          "question":  "Which authors published in both 2024 and 2025?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q079",
+                          "question":  "What is the author-count-per-output distribution?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q080",
+                          "question":  "Show top authors for a topic.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q081",
+                          "question":  "Which venues have the most works?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q082",
+                          "question":  "Which venues have the highest citation impact?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q083",
+                          "question":  "Which output types are most common?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q084",
+                          "question":  "How many datasets are in the corpus?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q085",
+                          "question":  "How many preprints are in the corpus?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q086",
+                          "question":  "Compare citation impact of articles vs preprints.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q087",
+                          "question":  "Which venues publish the most AI/ML work?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q088",
+                          "question":  "Which output types grew in 2025?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q089",
+                          "question":  "Which venues are associated with high-impact topics?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q090",
+                          "question":  "Show top venues by year.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q091",
+                          "question":  "What share of outputs is open access?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q092",
+                          "question":  "How many outputs have unknown access status?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q093",
+                          "question":  "Which topics have the highest open-access share?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q094",
+                          "question":  "Compare open access by source.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q095",
+                          "question":  "Which institutions have the highest open-access share?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q096",
+                          "question":  "How has open access changed by year?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q097",
+                          "question":  "Which venues are most open access?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q098",
+                          "question":  "Do open-access works have more citations?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q099",
+                          "question":  "How many outputs are closed access?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q100",
+                          "question":  "Show open-access coverage by topic and year.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q101",
+                          "question":  "How many works were published in 2024?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q102",
+                          "question":  "How many works were published in 2025?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q103",
+                          "question":  "Which year has the most works?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q104",
+                          "question":  "What is the publication-year distribution?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q105",
+                          "question":  "Compare 2020â€“2022 with 2023â€“2025.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q106",
+                          "question":  "Which topics grew most over the last five years?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q107",
+                          "question":  "Which topics declined over the last five years?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q108",
+                          "question":  "What is the partial-year effect for 2026?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q109",
+                          "question":  "Which years are under-represented in the corpus?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q110",
+                          "question":  "Show works by year and source.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q111",
+                          "question":  "How many duplicate DOIs were removed?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q112",
+                          "question":  "How many outputs are observed by multiple sources?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q113",
+                          "question":  "Which outputs appear in both OpenAlex and Crossref?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q114",
+                          "question":  "Which source contributes the most canonical outputs?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q115",
+                          "question":  "How many source observations map to one output?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q116",
+                          "question":  "Which topics have the most cross-source agreement?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q117",
+                          "question":  "How many outputs have more than one source observation?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q118",
+                          "question":  "What share of outputs have a DOI?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q119",
+                          "question":  "How many outputs are source-only identities?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q120",
+                          "question":  "Show cross-source overlap by year.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q121",
+                          "question":  "Find papers about retrieval-augmented generation.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q122",
+                          "question":  "Show recent papers on graph neural networks.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q123",
+                          "question":  "Find works by a specific author.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q124",
+                          "question":  "Find works from a specific institution.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q125",
+                          "question":  "Find papers in a specific venue.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q126",
+                          "question":  "Search titles containing â€œtransformerâ€.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q127",
+                          "question":  "Find highly cited papers about climate.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q128",
+                          "question":  "Show papers with both AI/ML and health sciences categories.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q129",
+                          "question":  "Find datasets about genomics.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q130",
+                          "question":  "Search for a topic that is not in the taxonomy.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q131",
+                          "question":  "Compare AI/ML and physics.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q132",
+                          "question":  "Compare OpenAlex and Crossref coverage.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q133",
+                          "question":  "Compare 2024 and 2025 topic rankings.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q134",
+                          "question":  "Compare institutions in AI/ML.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q135",
+                          "question":  "Compare venues by citation impact.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q136",
+                          "question":  "Compare open access across sources.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q137",
+                          "question":  "Compare preprints and articles.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q138",
+                          "question":  "Compare topic growth across sources.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q139",
+                          "question":  "Rank topics by citations per work.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q140",
+                          "question":  "Rank institutions by output count.",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q141",
+                          "question":  "When was the data last updated?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q142",
+                          "question":  "Which batches are published?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q143",
+                          "question":  "How many DQ rules passed?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q144",
+                          "question":  "Which batch failed?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q145",
+                          "question":  "What is the current corpus size?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q146",
+                          "question":  "What is the topic coverage today?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q147",
+                          "question":  "Which sources are currently included?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q148",
+                          "question":  "How fresh are citation snapshots?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q149",
+                          "question":  "What data is not reportable?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      },
+                      {
+                          "id":  "Q150",
+                          "question":  "Why is a topic missing from an answer?",
+                          "family":  "",
+                          "expected_metrics":  ""
+                      }
+                  ]
+}
