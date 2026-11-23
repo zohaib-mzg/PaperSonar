@@ -83,7 +83,7 @@ BEGIN
       TRY_TO_BOOLEAN(b.PAYLOAD:open_access.is_oa::STRING) AS OA_IS_OA,
       b.PAYLOAD:open_access.oa_status::STRING AS OA_STATUS,
       TRY_TO_NUMBER(b.PAYLOAD:cited_by_count::STRING) AS CITED_BY_COUNT,
-      b.PAYLOAD:authorships[0].author.display_name::STRING AS FIRST_AUTHOR_NAME,
+      LEFT(b.PAYLOAD:authorships[0].author.display_name::STRING, 500) AS FIRST_AUTHOR_NAME,
       REGEXP_REPLACE(
         b.PAYLOAD:authorships[0].author.id::STRING,
         '^https?://openalex[.]org/',
@@ -128,12 +128,15 @@ BEGIN
       NULL,
       NULL,
       TRY_TO_NUMBER(b.PAYLOAD:"is-referenced-by-count"::STRING),
-      NULLIF(
-        TRIM(
-          COALESCE(b.PAYLOAD:author[0].given::STRING, '') || ' ' ||
-          COALESCE(b.PAYLOAD:author[0].family::STRING, '')
+      LEFT(
+        NULLIF(
+          TRIM(
+            COALESCE(b.PAYLOAD:author[0].given::STRING, '') || ' ' ||
+            COALESCE(b.PAYLOAD:author[0].family::STRING, '')
+          ),
+          ''
         ),
-        ''
+        500
       ),
       b.PAYLOAD:author[0].ORCID::STRING,
       b.PAYLOAD:subject,
@@ -198,13 +201,16 @@ BEGIN
       TRUE,
       'green',
       NULL,
-      GET(
-        REGEXP_SUBSTR_ALL(
-          b.PAYLOAD:metadata_xml::STRING,
-          '<([A-Za-z0-9_]+:)?author[^>]*>([^<]+)<', 1, 1, 'e', 2
-        ),
-        0
-      )::STRING,
+      LEFT(
+        GET(
+          REGEXP_SUBSTR_ALL(
+            b.PAYLOAD:metadata_xml::STRING,
+            '<([A-Za-z0-9_]+:)?author[^>]*>([^<]+)<', 1, 1, 'e', 2
+          ),
+          0
+        )::STRING,
+        500
+      ),
       NULL,
       SPLIT(
         REGEXP_SUBSTR(
@@ -247,7 +253,7 @@ BEGIN
       NULL,
       NULL,
       NULL,
-      b.PAYLOAD:attributes.creators[0].name::STRING,
+      LEFT(b.PAYLOAD:attributes.creators[0].name::STRING, 500),
       b.PAYLOAD:attributes.creators[0].nameIdentifiers[0].nameIdentifier::STRING,
       b.PAYLOAD:attributes.subjects,
       b.PAYLOAD:attributes.creators,
@@ -318,13 +324,16 @@ BEGIN
       NULL,
       NULL,
       NULL,
-      GET(
-        REGEXP_SUBSTR_ALL(
-          b.PAYLOAD:metadata_xml::STRING,
-          '<([A-Za-z0-9_]+:)?creatorName[^>]*>([^<]+)<', 1, 1, 'e', 2
-        ),
-        0
-      )::STRING,
+      LEFT(
+        GET(
+          REGEXP_SUBSTR_ALL(
+            b.PAYLOAD:metadata_xml::STRING,
+            '<([A-Za-z0-9_]+:)?creatorName[^>]*>([^<]+)<', 1, 1, 'e', 2
+          ),
+          0
+        )::STRING,
+        500
+      ),
       NULL,
       REGEXP_SUBSTR_ALL(
         b.PAYLOAD:metadata_xml::STRING,

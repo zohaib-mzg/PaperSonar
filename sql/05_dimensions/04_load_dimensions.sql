@@ -446,7 +446,10 @@ BEGIN
           LOWER(TRIM(COALESCE(institution.value:display_name::STRING, ''))), 256
         )
     END,
-    COALESCE(institution.value:display_name::STRING, institution.value:name::STRING),
+    LEFT(
+      COALESCE(institution.value:display_name::STRING, institution.value:name::STRING),
+      1000
+    ),
     institution.value:country_code::STRING
   FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o,
   LATERAL FLATTEN(input => o.AUTHORS) author,
@@ -465,7 +468,10 @@ BEGIN
       LOWER(TRIM(COALESCE(institution.value:name::STRING, institution.value::STRING, ''))),
       256
     ),
-    COALESCE(institution.value:name::STRING, institution.value::STRING),
+    LEFT(
+      COALESCE(institution.value:name::STRING, institution.value::STRING),
+      1000
+    ),
     NULL
   FROM PAPERSONAR.PROJECT_SILVER.SLV_SOURCE_OBSERVATION o,
   LATERAL FLATTEN(input => o.AUTHORS) author,

@@ -260,19 +260,34 @@ def test_dq012_counts_primary_categories_without_crosswalk_fanout() -> None:
 def test_oversize_source_text_columns_are_wide_enough() -> None:
     """DataCite overflows narrow columns and aborts the whole batch.
 
-    A multi-valued publication date or a long subject string used to raise
-    "String ... is too long and would be truncated", which failed the batch at
-    the silver or dimensions stage and blocked publication.
+    A multi-valued publication date, a long author name, or a concatenated
+    affiliation used to raise "String ... is too long and would be truncated",
+    which failed the batch at the silver or dimensions stage and blocked
+    publication.
     """
     silver = _read(SQL_ROOT / "03_silver" / "01_slv_tables.sql")
     assert "PUBLICATION_DATE_RAW  VARCHAR(4000)" in silver
 
     transform = _read(SQL_ROOT / "03_silver" / "02_transform_batch.sql")
     assert "LEFT(b.PAYLOAD:publication_date::STRING, 4000)" in transform
+    assert (
+        "LEFT(b.PAYLOAD:authorships[0].author.display_name::STRING, 500) AS FIRST_AUTHOR_NAME"
+        in transform
+    )
+    assert "LEFT(b.PAYLOAD:attributes.creators[0].name::STRING, 500)" in transform
 
     dimensions = _read(SQL_ROOT / "05_dimensions" / "04_load_dimensions.sql")
     assert "TOPIC_NAME   VARCHAR(4000)" in dimensions
     assert "), 4000) AS TOPIC_NAME" in dimensions
+    assert "INSTITUTION_NAME  VARCHAR(1000)" in dimensions
+    assert (
+        "COALESCE(institution.value:display_name::STRING, institution.value:name::STRING),\n"
+        "      1000" in dimensions
+    )
+    assert (
+        "COALESCE(institution.value:name::STRING, institution.value::STRING),\n"
+        "      1000" in dimensions
+    )
 
     topic_dimension = _read(SQL_ROOT / "05_dimensions" / "03_dim_topic_category.sql")
     assert "TOPIC_NAME  VARCHAR(4000)" in topic_dimension
