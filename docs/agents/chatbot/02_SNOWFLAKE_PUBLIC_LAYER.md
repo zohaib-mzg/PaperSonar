@@ -1,0 +1,617 @@
+# 02 — Snowflake Public Layer
+
+**Read after:** `01_ARCHITECTURE_AND_BOUNDARIES.md`  
+**Read before:** `03_METRIC_CATALOGUE_AND_QUESTIONS.md`  
+**Owner:** data / SQL workstream
+
+---
+
+## 1. Purpose
+
+Create a read-only Snowflake surface for the public chatbot. The surface is
+additive: no existing table, view, task, role or grant is modified.
+
+The public app reads:
+
+- existing published views in `PAPERSONAR.PROJECT_REPORTING`
+- new `VW_PUBLIC_*` views in the same schema
+
+The public app never reads bronze, silver, staging or base DW tables directly.
+
+---
+
+## 2. Objects to create
+
+| Object | Name | Notes |
+|---|---|---|
+| Role | `PAPERSONAR_PUBLIC_RO` | Read-only public role |
+| Warehouse | `WH_PAPERSONAR_PUBLIC` | X-Small, auto-suspend 60 s |
+| Resource monitor | `RM_PAPERSONAR_PUBLIC` | Hard stop at quota |
+| Service user | `SVC_PAPERSONAR_PUBLIC` | Key-pair only; no password |
+| Schema | `PAPERSONAR.PROJECT_REPORTING` | Existing schema; usage only |
+| Views | `VW_PUBLIC_*` | New secure views |
+| Grants | `SELECT` on approved views | No base-table grants |
+
+---
+
+## 3. One-time setup
+
+The owner performs this after development with an administrative role that can
+create roles, warehouses, users and grants. The application and CI must never
+use `ACCOUNTADMIN`.
+
+### 3.1 Key pair
+
+Run on a trusted machine, outside the repository:
+
+```powershell
+openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt -outform pem > papersonar_public_key.p8
+openssl rsa -in papersonar_public_key.p8 -pubout -out papersonar_public_key.pub
+```
+
+Keep the private key outside git. Put it in Vercel as
+`SNOWFLAKE_PUBLIC_PRIVATE_KEY`; preserve newlines or store as base64 and decode
+in the server module. Register only the public key body on the Snowflake user.
+
+### 3.2 Setup SQL
+
+```sql
+-- 1. Role
+CREATE ROLE IF NOT EXISTS PAPERSONAR_PUBLIC_RO
+  COMMENT = 'Read-only role for the public PaperSonar chatbot';
+
+-- 2. Warehouse
+CREATE WAREHOUSE IF NOT EXISTS WH_PAPERSONAR_PUBLIC
+  WAREHOUSE_SIZE = 'XSMALL'
+  AUTO_SUSPEND = 60
+  AUTO_RESUME = TRUE
+  INITIALLY_SUSPENDED = TRUE
+  COMMENT = 'Public chatbot warehouse';
+
+-- 3. Resource monitor
+-- Adjust the quota to the owner's free-trial credit allowance.
+CREATE OR REPLACE RESOURCE MONITOR RM_PAPERSONAR_PUBLIC
+  WITH CREDIT_QUOTA = 10
+  FREQUENCY = MONTHLY
+  START_TIMESTAMP = IMMEDIATELY
+  TRIGGERS
+    ON 75 PERCENT DO NOTIFY
+    ON 90 PERCENT DO NOTIFY
+    ON 100 PERCENT DO SUSPEND;
+
+ALTER WAREHOUSE WH_PAPERSONAR_PUBLIC
+  SET RESOURCE_MONITOR = RM_PAPERSONAR_PUBLIC;
+
+-- 4. Service user
+CREATE USER IF NOT EXISTS SVC_PAPERSONAR_PUBLIC
+  TYPE = SERVICE
+  DEFAULT_ROLE = PAPERSONAR_PUBLIC_RO
+  DEFAULT_WAREHOUSE = WH_PAPERSONAR_PUBLIC
+  MUST_CHANGE_PASSWORD = FALSE
+  COMMENT = 'Public chatbot read-only service user';
+
+-- 5. Key-pair auth
+ALTER USER SVC_PAPERSONAR_PUBLIC
+  SET RSA_PUBLIC_KEY = '<PUBLIC_KEY_BODY_ONE_LINE>';
+
+-- 6. Basic grants
+GRANT USAGE ON DATABASE PAPERSONAR TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT USAGE ON SCHEMA PAPERSONAR.PROJECT_REPORTING TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT USAGE ON WAREHOUSE WH_PAPERSONAR_PUBLIC TO ROLE PAPERSONAR_PUBLIC_RO;
+
+-- 7. Role to service user
+GRANT ROLE PAPERSONAR_PUBLIC_RO TO USER SVC_PAPERSONAR_PUBLIC;
+```
+
+Do **not** grant `USAGE` on `PROJECT_BRONZE`, `PROJECT_SILVER`,
+`PROJECT_STAGING`, `PROJECT_DW` or `PROJECT_AUDIT`.
+
+---
+
+## 4. Existing views: approved public read surface
+
+These views already enforce the published-batch contract. Grant `SELECT` only.
+
+| View | Grain | Key columns |
+|---|---|---|
+| `VW_RESEARCH_OUTPUT` | one published output | `OUTPUT_SK`, `OUTPUT_BK`, `DOI_NORMALIZED`, `PUBLICATION_YEAR`, `PUBLICATION_DATE`, `OUTPUT_TYPE_NAME`, `VENUE_NAME`, `ACCESS_STATUS_NAME`, `PRIMARY_SOURCE_NAME`, `CITED_BY_COUNT`, `OA_IS_OA`, `CATEGORY_KEY`, `CATEGORY_LABEL`, `LAST_BATCH_ID` |
+| `VW_CITATION_SNAPSHOT` | output × source × snapshot | `OUTPUT_SK`, `OUTPUT_BK`, `SNAPSHOT_DATE`, `SOURCE_NAME`, `CITED_BY_COUNT`, `OA_IS_OA`, `OA_STATUS`, `ACCESS_STATUS_NAME` |
+| `VW_SOURCE_OBSERVATION` | source observation | `OUTPUT_SK`, `SOURCE_NAME`, `ENTITY_NAME`, `SOURCE_RECORD_ID`, `INGESTED_AT`, `BATCH_ID` |
+| `VW_CATEGORY_COVERAGE` | category | `CATEGORY_KEY`, `CATEGORY_LABEL`, `OUTPUT_COUNT` |
+| `VW_PUBLISHED_BATCH` | published batch | `BATCH_ID`, `PUBLISHED_AT`, `IS_CAPPED`, `SOURCE_NAME`, `ENTITY_NAME`, `WINDOW_START`, `WINDOW_END` |
+| `VW_PIPELINE_HEALTH` | batch | `BATCH_ID`, `SOURCE_NAME`, `ENTITY_NAME`, `STATUS`, counts, DQ failure counts |
+| `VW_CATEGORY_LABEL` | category | `CATEGORY_KEY`, `CATEGORY_LABEL`, `PARENT_KEY`, `TAXONOMY_VERSION`, `IS_UNKNOWN` |
+| `VW_TOPIC_GROWTH` | category × year | `CATEGORY_KEY`, `CATEGORY_LABEL`, `PUBLICATION_YEAR`, `WORKS`, `CORPUS_WORKS`, `CLASSIFIED_WORKS`, `SHARE_OF_CORPUS`, `SHARE_OF_CLASSIFIED_CORPUS`, `IS_COVERAGE_CATEGORY` |
+| `VW_OUTPUT_COVERAGE` | source × year × type | `PRIMARY_SOURCE_NAME`, `PUBLICATION_YEAR`, `OUTPUT_TYPE_NAME`, `OUTPUTS`, `CATEGORIZED_OUTPUTS`, `CATEGORY_COVERAGE_RATIO`, missing-metadata counts |
+| `VW_CITATION_COHORTS` | output × snapshot | `OUTPUT_SK`, `SNAPSHOT_DATE`, `CITED_BY_COUNT`, `PUBLICATION_YEAR`, `CATEGORY_KEY`, `CATEGORY_LABEL`, `PRIMARY_SOURCE_NAME`, `OUTPUT_TYPE_NAME` |
+| `VW_TOPIC_INTERSECTIONS` | unordered category pair | `CATEGORY_KEY_A`, `CATEGORY_KEY_B`, `JOINT_WORKS`, `PARENT_WORKS_A/B`, `JOINT_TO_SMALLER_PARENT_RATIO`, `IS_REPORTABLE` |
+| `VW_RESEARCH_COMMUNITY` | institution × category × year | `INSTITUTION_KEY`, `INSTITUTION_NAME`, `COUNTRY_CODE`, `CATEGORY_KEY`, `CATEGORY_LABEL`, `PUBLICATION_YEAR`, `WORKS`, `FRACTIONAL_CREDIT`, `IS_UNKNOWN_INSTITUTION` |
+
+### Important existing semantics
+
+- `VW_CITATION_SNAPSHOT` has one row per output/source/date. Never sum across
+  sources.
+- `VW_RESEARCH_OUTPUT.CITED_BY_COUNT` is a winner-source field; use snapshot
+  views for citation analysis.
+- `VW_RESEARCH_OUTPUT` has no title. Title search uses the new public search
+  view.
+- `VW_RESEARCH_COMMUNITY` excludes unknown institutions from rankings and
+  flags them.
+- `VW_TOPIC_GROWTH` suppresses growth via the caller’s threshold logic; the
+  view exposes the counts needed to suppress.
+- `unclassified` is a real category; exclude it from topic rankings and report
+  coverage separately.
+
+---
+
+## 5. New public views
+
+Create these in `sql/11_public_api/01_public_views.sql`. They are additive,
+idempotent secure views. They must not replace existing views.
+
+### 5.1 `VW_PUBLIC_TOPIC_YEAR`
+
+Grain: category × publication year.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_YEAR AS
+SELECT
+  growth.CATEGORY_KEY,
+  growth.CATEGORY_LABEL,
+  label.PARENT_KEY AS PARENT_CATEGORY_KEY,
+  growth.PUBLICATION_YEAR,
+  growth.WORKS,
+  growth.CORPUS_WORKS,
+  growth.CLASSIFIED_WORKS,
+  growth.SHARE_OF_CORPUS,
+  growth.SHARE_OF_CLASSIFIED_CORPUS,
+  growth.IS_COVERAGE_CATEGORY,
+  growth.RETRIEVED_ON
+FROM PAPERSONAR.PROJECT_REPORTING.VW_TOPIC_GROWTH growth
+LEFT JOIN PAPERSONAR.PROJECT_REPORTING.VW_CATEGORY_LABEL label
+  ON label.CATEGORY_KEY = growth.CATEGORY_KEY;
+```
+
+### 5.2 `VW_PUBLIC_TOPIC_CITATIONS`
+
+Grain: category × publication year × snapshot date. One source per output,
+using the same source-priority rule as the Phase 3 analytics.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_CITATIONS AS
+WITH ranked AS (
+  SELECT
+    snapshot.OUTPUT_SK,
+    snapshot.SNAPSHOT_DATE,
+    snapshot.SOURCE_NAME,
+    snapshot.CITED_BY_COUNT,
+    output.CATEGORY_KEY,
+    output.CATEGORY_LABEL,
+    output.PUBLICATION_YEAR
+  FROM PAPERSONAR.PROJECT_REPORTING.VW_CITATION_SNAPSHOT snapshot
+  JOIN PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT output
+    ON output.OUTPUT_SK = snapshot.OUTPUT_SK
+  WHERE output.CATEGORY_KEY <> 'unclassified'
+  QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY snapshot.OUTPUT_SK, snapshot.SNAPSHOT_DATE
+    ORDER BY CASE snapshot.SOURCE_NAME
+               WHEN 'OPENALEX' THEN 1
+               WHEN 'CROSSREF' THEN 2
+               WHEN 'ARXIV' THEN 3
+               WHEN 'DATACITE' THEN 4
+               WHEN 'ZENODO' THEN 5
+               ELSE 9
+             END,
+             snapshot.SOURCE_NAME
+  ) = 1
+)
+SELECT
+  CATEGORY_KEY,
+  CATEGORY_LABEL,
+  PUBLICATION_YEAR,
+  SNAPSHOT_DATE,
+  COUNT(DISTINCT OUTPUT_SK) AS COHORT_SIZE,
+  COUNT(CITED_BY_COUNT) AS OBSERVED_WORKS,
+  SUM(CITED_BY_COUNT) AS TOTAL_CITATIONS,
+  ROUND(AVG(CITED_BY_COUNT), 2) AS AVG_CITED_BY,
+  MEDIAN(CITED_BY_COUNT) AS MEDIAN_CITED_BY,
+  MIN(CITED_BY_COUNT) AS MIN_CITED_BY,
+  MAX(CITED_BY_COUNT) AS MAX_CITED_BY,
+  COUNT_IF(CITED_BY_COUNT = 0) AS ZERO_CITATION_WORKS,
+  'PRIORITY_DEDUPED' AS SOURCE_SCOPE,
+  CURRENT_DATE() AS RETRIEVED_ON
+FROM ranked
+GROUP BY 1, 2, 3, 4;
+```
+
+### 5.3 `VW_PUBLIC_TOPIC_INTERSECTIONS`
+
+Grain: unordered category pair with labels.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_INTERSECTIONS AS
+SELECT
+  pair.CATEGORY_KEY_A,
+  left_label.CATEGORY_LABEL AS CATEGORY_LABEL_A,
+  pair.CATEGORY_KEY_B,
+  right_label.CATEGORY_LABEL AS CATEGORY_LABEL_B,
+  pair.JOINT_WORKS,
+  pair.PARENT_WORKS_A,
+  pair.PARENT_WORKS_B,
+  pair.JOINT_TO_SMALLER_PARENT_RATIO,
+  pair.IS_REPORTABLE,
+  pair.MIN_PARENT_WORKS,
+  pair.MIN_JOINT_WORKS,
+  pair.RETRIEVED_ON
+FROM PAPERSONAR.PROJECT_REPORTING.VW_TOPIC_INTERSECTIONS pair
+LEFT JOIN PAPERSONAR.PROJECT_REPORTING.VW_CATEGORY_LABEL left_label
+  ON left_label.CATEGORY_KEY = pair.CATEGORY_KEY_A
+LEFT JOIN PAPERSONAR.PROJECT_REPORTING.VW_CATEGORY_LABEL right_label
+  ON right_label.CATEGORY_KEY = pair.CATEGORY_KEY_B;
+```
+
+### 5.4 `VW_PUBLIC_INSTITUTION_TOPIC`
+
+Grain: institution × category × year.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_INSTITUTION_TOPIC AS
+SELECT
+  INSTITUTION_KEY,
+  INSTITUTION_NAME,
+  COUNTRY_CODE,
+  CATEGORY_KEY,
+  CATEGORY_LABEL,
+  PUBLICATION_YEAR,
+  WORKS,
+  FRACTIONAL_CREDIT,
+  IS_UNKNOWN_INSTITUTION,
+  RETRIEVED_ON
+FROM PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_COMMUNITY;
+```
+
+### 5.5 `VW_PUBLIC_AUTHOR_ACTIVITY`
+
+Grain: category × year × author. Uses published outputs, published author
+bridges and the current SCD2 author row.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_AUTHOR_ACTIVITY AS
+WITH published_output AS (
+  SELECT
+    output.OUTPUT_SK,
+    output.CATEGORY_KEY,
+    output.CATEGORY_LABEL,
+    output.PUBLICATION_YEAR
+  FROM PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT output
+  WHERE output.CATEGORY_KEY <> 'unclassified'
+),
+author_output AS (
+  SELECT
+    bridge.OUTPUT_SK,
+    bridge.AUTHOR_KEY,
+    bridge.SOURCE_NAME
+  FROM PAPERSONAR.PROJECT_DW.BRIDGE_OUTPUT_AUTHOR bridge
+  WHERE EXISTS (
+    SELECT 1
+    FROM PAPERSONAR.PROJECT_AUDIT.PUBLISHED_BATCH published
+    WHERE published.BATCH_ID = bridge.BATCH_ID
+  )
+)
+SELECT
+  output.CATEGORY_KEY,
+  output.CATEGORY_LABEL,
+  output.PUBLICATION_YEAR,
+  author_output.AUTHOR_KEY,
+  author.AUTHOR_NAME,
+  author.ORCID,
+  MAX(author_output.SOURCE_NAME) AS SOURCE_NAME,
+  COUNT(DISTINCT author_output.OUTPUT_SK) AS WORKS,
+  CURRENT_DATE() AS RETRIEVED_ON
+FROM author_output
+JOIN published_output output
+  ON output.OUTPUT_SK = author_output.OUTPUT_SK
+JOIN PAPERSONAR.PROJECT_DW.DIM_AUTHOR author
+  ON author.AUTHOR_KEY = author_output.AUTHOR_KEY
+ AND author.IS_CURRENT
+GROUP BY 1, 2, 3, 4, 5, 6;
+```
+
+Author names are not identifiers. Always display `AUTHOR_KEY` or ORCID in the
+receipt, and state that activity is not expertise.
+
+### 5.6 `VW_PUBLIC_VENUE_TOPIC`
+
+Grain: category × year × venue × output type × primary source.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_VENUE_TOPIC AS
+SELECT
+  CATEGORY_KEY,
+  CATEGORY_LABEL,
+  PUBLICATION_YEAR,
+  VENUE_NAME,
+  OUTPUT_TYPE_NAME,
+  PRIMARY_SOURCE_NAME,
+  COUNT(DISTINCT OUTPUT_SK) AS WORKS,
+  CURRENT_DATE() AS RETRIEVED_ON
+FROM PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT
+WHERE CATEGORY_KEY <> 'unclassified'
+  AND VENUE_NAME IS NOT NULL
+  AND VENUE_NAME <> ''
+  AND VENUE_NAME <> 'Unknown'
+GROUP BY 1, 2, 3, 4, 5, 6;
+```
+
+### 5.7 `VW_PUBLIC_ACCESS_TOPIC`
+
+Grain: category × year × output type. Uses the published output’s winner-source
+access fields; state that scope in the receipt.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_ACCESS_TOPIC AS
+SELECT
+  CATEGORY_KEY,
+  CATEGORY_LABEL,
+  PUBLICATION_YEAR,
+  OUTPUT_TYPE_NAME,
+  COUNT(DISTINCT OUTPUT_SK) AS WORKS,
+  COUNT(DISTINCT IFF(COALESCE(ACCESS_STATUS_NAME, 'Unknown') <> 'Unknown',
+                     OUTPUT_SK, NULL)) AS KNOWN_ACCESS_WORKS,
+  COUNT(DISTINCT IFF(COALESCE(ACCESS_STATUS_NAME, 'Unknown') = 'Unknown',
+                     OUTPUT_SK, NULL)) AS UNKNOWN_ACCESS_WORKS,
+  COUNT(DISTINCT IFF(OA_IS_OA, OUTPUT_SK, NULL)) AS OPEN_ACCESS_WORKS,
+  ROUND(
+    COUNT(DISTINCT IFF(OA_IS_OA, OUTPUT_SK, NULL))
+    / NULLIF(COUNT(DISTINCT IFF(COALESCE(ACCESS_STATUS_NAME, 'Unknown') <> 'Unknown',
+                                OUTPUT_SK, NULL)), 0),
+    6) AS OPEN_ACCESS_SHARE_KNOWN,
+  CURRENT_DATE() AS RETRIEVED_ON
+FROM PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT
+WHERE CATEGORY_KEY <> 'unclassified'
+GROUP BY 1, 2, 3, 4;
+```
+
+### 5.8 `VW_PUBLIC_OUTPUT_SEARCH`
+
+Grain: one published output. Title comes from the matching published silver
+version. This is the only public view that exposes titles.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_OUTPUT_SEARCH AS
+SELECT
+  output.OUTPUT_SK,
+  output.OUTPUT_BK,
+  output.DOI_NORMALIZED,
+  LEFT(silver.TITLE, 1000) AS TITLE,
+  output.PUBLICATION_YEAR,
+  output.PUBLICATION_DATE,
+  output.CATEGORY_KEY,
+  output.CATEGORY_LABEL,
+  output.PRIMARY_SOURCE_NAME,
+  output.OUTPUT_TYPE_NAME,
+  output.VENUE_NAME,
+  output.ACCESS_STATUS_NAME,
+  output.CITED_BY_COUNT,
+  output.OA_IS_OA,
+  output.LAST_BATCH_ID,
+  CURRENT_DATE() AS RETRIEVED_ON
+FROM PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT output
+JOIN PAPERSONAR.PROJECT_SILVER.SLV_RESEARCH_OUTPUT silver
+  ON silver.OUTPUT_BK = output.OUTPUT_BK
+ AND silver.LAST_BATCH_ID = output.LAST_BATCH_ID
+WHERE silver.TITLE IS NOT NULL
+  AND TRIM(silver.TITLE) <> '';
+```
+
+The API must always add `LIMIT` and may search with `ILIKE`. It must not return
+the full title column unbounded.
+
+### 5.9 `VW_PUBLIC_DATA_STATUS`
+
+Grain: one row per source, latest published batch.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_DATA_STATUS AS
+WITH ranked AS (
+  SELECT
+    BATCH_ID,
+    SOURCE_NAME,
+    ENTITY_NAME,
+    PUBLISHED_AT,
+    WINDOW_START,
+    WINDOW_END,
+    IS_CAPPED,
+    ROW_NUMBER() OVER (
+      PARTITION BY SOURCE_NAME
+      ORDER BY PUBLISHED_AT DESC, BATCH_ID DESC
+    ) AS RN
+  FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLISHED_BATCH
+)
+SELECT
+  SOURCE_NAME,
+  ENTITY_NAME,
+  BATCH_ID,
+  PUBLISHED_AT,
+  WINDOW_START,
+  WINDOW_END,
+  IS_CAPPED,
+  CURRENT_DATE() AS RETRIEVED_ON
+FROM ranked
+WHERE RN = 1;
+```
+
+### 5.10 `VW_PUBLIC_CORPUS_SUMMARY`
+
+Grain: one row for the public corpus.
+
+```sql
+CREATE OR REPLACE SECURE VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_CORPUS_SUMMARY AS
+WITH outputs AS (
+  SELECT
+    COUNT(DISTINCT OUTPUT_SK) AS TOTAL_OUTPUTS,
+    COUNT(DISTINCT IFF(CATEGORY_KEY <> 'unclassified', OUTPUT_SK, NULL))
+      AS CLASSIFIED_OUTPUTS,
+    COUNT(DISTINCT PRIMARY_SOURCE_NAME) AS SOURCE_COUNT,
+    MIN(PUBLICATION_YEAR) AS EARLIEST_PUBLICATION_YEAR,
+    MAX(PUBLICATION_YEAR) AS LATEST_PUBLICATION_YEAR
+  FROM PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT
+),
+snapshots AS (
+  SELECT MAX(SNAPSHOT_DATE) AS LATEST_SNAPSHOT_DATE
+  FROM PAPERSONAR.PROJECT_REPORTING.VW_CITATION_SNAPSHOT
+),
+batches AS (
+  SELECT MAX(PUBLISHED_AT) AS LATEST_PUBLISHED_AT
+  FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLISHED_BATCH
+)
+SELECT
+  outputs.TOTAL_OUTPUTS,
+  outputs.CLASSIFIED_OUTPUTS,
+  outputs.SOURCE_COUNT,
+  outputs.EARLIEST_PUBLICATION_YEAR,
+  outputs.LATEST_PUBLICATION_YEAR,
+  snapshots.LATEST_SNAPSHOT_DATE,
+  batches.LATEST_PUBLISHED_AT,
+  CURRENT_DATE() AS RETRIEVED_ON
+FROM outputs, snapshots, batches;
+```
+
+---
+
+## 6. Grant script
+
+Create `sql/11_public_api/02_public_grants.sql`.
+
+```sql
+-- Existing published views
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLISHED_BATCH
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_OUTPUT
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_CITATION_SNAPSHOT
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_SOURCE_OBSERVATION
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_CATEGORY_COVERAGE
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PIPELINE_HEALTH
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_CATEGORY_LABEL
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_TOPIC_GROWTH
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_OUTPUT_COVERAGE
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_CITATION_COHORTS
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_TOPIC_INTERSECTIONS
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_RESEARCH_COMMUNITY
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+
+-- New public views
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_YEAR
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_CITATIONS
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_INTERSECTIONS
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_INSTITUTION_TOPIC
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_AUTHOR_ACTIVITY
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_VENUE_TOPIC
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_ACCESS_TOPIC
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_OUTPUT_SEARCH
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_DATA_STATUS
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+GRANT SELECT ON VIEW PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_CORPUS_SUMMARY
+  TO ROLE PAPERSONAR_PUBLIC_RO;
+```
+
+Do not use `GRANT SELECT ON ALL TABLES` or `FUTURE TABLES` for the public role.
+
+---
+
+## 7. Verification
+
+Create `sql/11_public_api/03_public_verification.sql` as a manual worksheet
+script. It must be read-only.
+
+```sql
+USE ROLE PAPERSONAR_PUBLIC_RO;
+USE WAREHOUSE WH_PAPERSONAR_PUBLIC;
+
+SELECT COUNT(*) AS TOPIC_YEAR_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_YEAR;
+SELECT COUNT(*) AS CITATION_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_CITATIONS;
+SELECT COUNT(*) AS INTERSECTION_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_TOPIC_INTERSECTIONS;
+SELECT COUNT(*) AS INSTITUTION_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_INSTITUTION_TOPIC;
+SELECT COUNT(*) AS AUTHOR_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_AUTHOR_ACTIVITY;
+SELECT COUNT(*) AS VENUE_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_VENUE_TOPIC;
+SELECT COUNT(*) AS ACCESS_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_ACCESS_TOPIC;
+SELECT COUNT(*) AS SEARCH_ROWS FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_OUTPUT_SEARCH;
+SELECT * FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_DATA_STATUS;
+SELECT * FROM PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_CORPUS_SUMMARY;
+
+-- These must fail. If any succeeds, stop and revoke access.
+SELECT COUNT(*) FROM PAPERSONAR.PROJECT_SILVER.SLV_RESEARCH_OUTPUT;
+SELECT COUNT(*) FROM PAPERSONAR.PROJECT_BRONZE.BRZ_OPENALEX_WORK;
+SELECT COUNT(*) FROM PAPERSONAR.PROJECT_DW.FACT_RESEARCH_OUTPUT;
+```
+
+Also verify:
+
+```sql
+SHOW GRANTS TO ROLE PAPERSONAR_PUBLIC_RO;
+SHOW GRANTS TO USER SVC_PAPERSONAR_PUBLIC;
+DESC USER SVC_PAPERSONAR_PUBLIC;
+```
+
+Acceptance:
+
+- [ ] Every approved view returns rows.
+- [ ] Every base-table query fails.
+- [ ] `PAPERSONAR_PUBLIC_RO` has no write privilege.
+- [ ] `SVC_PAPERSONAR_PUBLIC` has no password.
+- [ ] The resource monitor is attached to `WH_PAPERSONAR_PUBLIC`.
+- [ ] The public key is registered and the private key is only in Vercel.
+
+---
+
+## 8. Performance and safety rules
+
+- Public queries must use pre-aggregated views where possible.
+- Maximum rows returned to the API: 50. Maximum rows in SQL: 200.
+- Set `STATEMENT_TIMEOUT_IN_SECONDS = 30` on every SQL API statement.
+- Set `QUERY_TAG = 'public-chatbot'`.
+- Never allow a query without a `LIMIT` for ranked/list metrics.
+- Search queries must use `ILIKE` with a bounded pattern and `LIMIT 50`.
+- Do not expose `VW_PUBLIC_OUTPUT_SEARCH.TITLE` without a search filter.
+- Always use the public role and public warehouse.
+- The API must not interpolate user strings into SQL; use Snowflake bindings.
+
+---
+
+## 9. Key rotation
+
+1. Generate a new key pair.
+2. Register the new public key with `RSA_PUBLIC_KEY_2`.
+3. Update the private key in Vercel.
+4. Smoke-test `/api/health` and a known metric.
+5. Remove the old public key with `ALTER USER ... UNSET RSA_PUBLIC_KEY`.
+6. Record the rotation date in the runbook.
+
+---
+
+## 10. Acceptance for this document
+
+- [ ] `sql/11_public_api/01_public_views.sql` creates only new views.
+- [ ] `sql/11_public_api/02_public_grants.sql` grants only approved views.
+- [ ] `sql/11_public_api/03_public_verification.sql` is read-only.
+- [ ] The public role cannot read any base table.
+- [ ] The five existing Phase 3 views remain unchanged.
+- [ ] The next document can define every metric without new Snowflake objects.

@@ -1,0 +1,221 @@
+version: 1
+metrics:
+  - id: M01
+    label: Topic growth
+    description: Change in published works between two complete years.
+    template: M01_TOPIC_GROWTH_V1
+    primary_view: VW_PUBLIC_TOPIC_YEAR
+    dimensions: [category_key, year_from, year_to]
+    denominator: distinct published outputs
+    caveats:
+      - Growth describes the retained published corpus, not all research.
+      - A ranking is withheld when either endpoint has fewer than 30 works.
+  - id: M02
+    label: Topic share
+    description: Share of the selected corpus by category and year.
+    template: M02_TOPIC_SHARE_V1
+    primary_view: VW_PUBLIC_TOPIC_YEAR
+    dimensions: [category_key, year_from, year_to]
+    denominator: published works in the selected year
+    caveats:
+      - Share is relative to the selected corpus and year.
+  - id: M03
+    label: Topic volume
+    description: Published works for a category in the selected year window.
+    template: M03_TOPIC_VOLUME_V1
+    primary_view: VW_PUBLIC_TOPIC_YEAR
+    dimensions: [category_key, year_from, year_to]
+    denominator: distinct published outputs
+    caveats:
+      - Counts are distinct published outputs.
+  - id: M04
+    label: Topic citations
+    description: Citation snapshot statistics for a category.
+    template: M04_TOPIC_CITATIONS_V1
+    primary_view: VW_PUBLIC_TOPIC_CITATIONS
+    dimensions: [category_key, snapshot_date]
+    denominator: observed works in the priority-deduplicated snapshot
+    caveats:
+      - Citations are a snapshot, not live counts and not a measure of quality.
+      - One source is selected per output by source priority.
+  - id: M05
+    label: Citation gains
+    description: Citation change between two observed snapshots.
+    template: M05_CITATION_GAINS_V1
+    primary_view: VW_CITATION_SNAPSHOT
+    dimensions: [category_key, snapshot_date]
+    denominator: outputs observed at both snapshots from the same source
+    caveats:
+      - Only works present in both snapshots qualify.
+  - id: M06
+    label: Topic intersections
+    description: Co-occurrence of two categories.
+    template: M06_TOPIC_INTERSECTIONS_V1
+    primary_view: VW_PUBLIC_TOPIC_INTERSECTIONS
+    dimensions: [category_key, category_key_b]
+    denominator: the smaller parent category
+    caveats:
+      - A co-occurrence is a discovery signal, not proof of novelty or causality.
+  - id: M07
+    label: Source coverage
+    description: Output and metadata coverage by source and year.
+    template: M07_SOURCE_COVERAGE_V1
+    primary_view: VW_OUTPUT_COVERAGE
+    dimensions: [source_name, year_from, year_to]
+    denominator: outputs observed from the selected source
+    caveats:
+      - Coverage is a property of this corpus, not a global quality judgement.
+  - id: M08
+    label: Metadata completeness
+    description: Missing DOI, category, venue or access metadata.
+    template: M08_METADATA_COMPLETENESS_V1
+    primary_view: VW_OUTPUT_COVERAGE
+    dimensions: [source_name, year_from, year_to]
+    denominator: eligible published outputs
+    caveats:
+      - Missing metadata is reported as missing, never zero.
+  - id: M09
+    label: Institution activity
+    description: Institutional works and fractional credit by category and year.
+    template: M09_INSTITUTION_ACTIVITY_V1
+    primary_view: VW_PUBLIC_INSTITUTION_TOPIC
+    dimensions: [institution_key, category_key, year_from, year_to]
+    denominator: fractional publication credit
+    caveats:
+      - Institution credit is fractional and depends on reported affiliations.
+  - id: M10
+    label: Institution concentration
+    description: Top-five institution concentration for a category and year.
+    template: M10_INSTITUTION_CONCENTRATION_V1
+    primary_view: VW_PUBLIC_INSTITUTION_TOPIC
+    dimensions: [category_key, year_from, year_to]
+    denominator: total classified fractional credit
+    caveats:
+      - Unknown institutions are excluded from the ranking and disclosed separately.
+  - id: M11
+    label: Author activity
+    description: Author publication activity by category and year.
+    template: M11_AUTHOR_ACTIVITY_V1
+    primary_view: VW_PUBLIC_AUTHOR_ACTIVITY
+    dimensions: [author_key, category_key, year_from, year_to]
+    denominator: distinct published outputs
+    caveats:
+      - Author names are not unique identifiers; activity is not expertise.
+  - id: M12
+    label: Venue activity
+    description: Venue publication activity by category and year.
+    template: M12_VENUE_ACTIVITY_V1
+    primary_view: VW_PUBLIC_VENUE_TOPIC
+    dimensions: [venue_name, category_key, year_from, year_to]
+    denominator: works in the selected category and year
+    caveats:
+      - A primary venue can be a repository; this does not rank quality.
+  - id: M13
+    label: Output type mix
+    description: Published outputs by type, source and year.
+    template: M13_OUTPUT_TYPE_MIX_V1
+    primary_view: VW_OUTPUT_COVERAGE
+    dimensions: [source_name, year_from, year_to]
+    denominator: outputs observed in the selected source and year
+    caveats:
+      - Output types are source-reported and not normalised across all providers.
+  - id: M14
+    label: Open access
+    description: Open-access share using published winner-source access fields.
+    template: M14_OPEN_ACCESS_V1
+    primary_view: VW_PUBLIC_ACCESS_TOPIC
+    dimensions: [category_key, year_from, year_to]
+    denominator: works with known access status
+    caveats:
+      - Unknown access status is disclosed separately and never counted as closed.
+      - Scope uses the published output's winner-source access fields.
+  - id: M15
+    label: Year distribution
+    description: Published outputs by publication year.
+    template: M15_YEAR_DISTRIBUTION_V1
+    primary_view: VW_PUBLIC_TOPIC_YEAR
+    dimensions: [category_key, year_from, year_to]
+    denominator: distinct published outputs
+    caveats:
+      - The corpus is not a complete census; recent years may be partial.
+  - id: M16
+    label: Cross-source overlap
+    description: Source observations per canonical output.
+    template: M16_CROSS_SOURCE_OVERLAP_V1
+    primary_view: VW_SOURCE_OBSERVATION
+    dimensions: [source_name, year_from, year_to]
+    denominator: canonical published outputs
+    caveats:
+      - One canonical output can have several source observations.
+  - id: M17
+    label: Output search
+    description: Lexical title search over published outputs.
+    template: M17_OUTPUT_SEARCH_V1
+    primary_view: VW_PUBLIC_OUTPUT_SEARCH
+    dimensions: [search_term, limit]
+    denominator: published outputs with a non-empty title
+    caveats:
+      - Title search is lexical, not semantic; it does not search full text.
+  - id: M18
+    label: Data status
+    description: Latest published batch by source.
+    template: M18_DATA_STATUS_V1
+    primary_view: VW_PUBLIC_DATA_STATUS
+    dimensions: [source_name]
+    denominator: published batches
+    caveats:
+      - A published batch is not a promise that every source is complete.
+  - id: M19
+    label: Corpus summary
+    description: High-level published corpus totals.
+    template: M19_CORPUS_SUMMARY_V1
+    primary_view: VW_PUBLIC_CORPUS_SUMMARY
+    dimensions: []
+    denominator: distinct published outputs
+    caveats:
+      - Summary describes the retained published corpus.
+  - id: M20
+    label: Topic lookup
+    description: Category label and match information without counts.
+    template: M20_TOPIC_LOOKUP_V1
+    primary_view: VW_CATEGORY_LABEL
+    dimensions: [category_key]
+    denominator: none
+    caveats:
+      - Mapping to a broader category is always disclosed.
+  - id: M21
+    label: Comparison
+    description: Two-sided composition of any other metric family.
+    template: M21_COMPARISON_V1
+    primary_view: composed
+    dimensions: [category_key, category_key_b]
+    denominator: metric-specific
+    caveats:
+      - Both sides use the same snapshot and date window unless explicitly changed.
+  - id: M22
+    label: Freshness
+    description: Latest snapshot, batch and corpus size.
+    template: M22_FRESHNESS_V1
+    primary_view: VW_PUBLIC_CORPUS_SUMMARY
+    dimensions: []
+    denominator: distinct published outputs
+    caveats:
+      - Citation counts and publication coverage move at different speeds.
+  - id: M23
+    label: Output citation rank
+    description: Top outputs by citations at the latest snapshot.
+    template: M23_OUTPUT_CITATION_RANK_V1
+    primary_view: VW_CITATION_COHORTS
+    dimensions: [category_key, snapshot_date, limit]
+    denominator: outputs with a citation snapshot
+    caveats:
+      - Top citation counts favour older works; compare within cohorts.
+  - id: M24
+    label: Source contribution
+    description: Canonical outputs and observations contributed by each source.
+    template: M24_SOURCE_CONTRIBUTION_V1
+    primary_view: VW_SOURCE_OBSERVATION
+    dimensions: [source_name, year_from, year_to]
+    denominator: canonical published outputs
+    caveats:
+      - Source contribution is not a quality score.

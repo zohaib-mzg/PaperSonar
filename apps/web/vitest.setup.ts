@@ -1,0 +1,10 @@
+process.env.PUBLIC_CHAT_ENABLED = "true";
+process.env.PUBLIC_APP_ORIGIN = "https://paper-sonar.vercel.app";
+process.env.LLM_MODE = "off";
+process.env.SNOWFLAKE_ACCOUNT = "paper_test";
+process.env.SNOWFLAKE_ACCOUNT_URL = "https://example.snowflakecomputing.com";
+process.env.SNOWFLAKE_PUBLIC_USER = "SVC_PAPERSONAR_PUBLIC";
+process.env.SNOWFLAKE_PUBLIC_ROLE = "PAPERSONAR_PUBLIC_RO";
+process.env.SNOWFLAKE_PUBLIC_WAREHOUSE = "WH_PAPERSONAR_PUBLIC";
+process.env.SNOWFLAKE_PUBLIC_PRIVATE_KEY = "not-a-real-key";
+process.env.IP_HASH_SALT = "test-ip-hash-salt-0123456789";
