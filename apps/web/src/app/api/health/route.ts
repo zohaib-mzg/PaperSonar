@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION, env, missingForChat, providerStatus } from "@/server/env";
 import { cache } from "@/server/cache";
+import { log } from "@/server/logger";
 import { querySnowflake, SnowflakeError } from "@/server/snowflake/client";
 
 export const runtime = "nodejs";
@@ -44,6 +45,13 @@ export async function GET() {
         await querySnowflake("SELECT 1 AS OK");
         snowflake = "ok";
       } catch (error) {
+        const err = error as { message?: string; code?: string; name?: string; sqlState?: string };
+        log("error", "health.snowflake_failed", {
+          error_name: err?.name,
+          error_code: err?.code,
+          error_message: err?.message,
+          sql_state: err?.sqlState,
+        });
         snowflake = error instanceof SnowflakeError && error.code === "NOT_CONFIGURED"
           ? "missing"
           : "error";
