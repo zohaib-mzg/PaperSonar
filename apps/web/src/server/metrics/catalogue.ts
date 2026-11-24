@@ -92,13 +92,16 @@ for (const rule of taxonomyRules) {
 }
 
 const manualAliases: Record<string, string[]> = {
-  "ai-ml": ["ai/ml", "artificial intelligence", "machine learning", "ai"],
-  llm: ["large language model", "large language models", "llms"],
+  "ai-ml": ["ai/ml", "artificial intelligence", "machine learning", "ai", "ml"],
+  llm: ["large language model", "large language models", "llms", "fine-tuning", "fine tuning", "finetuning"],
   rag: ["retrieval augmented generation", "retrieval-augmented generation", "rag"],
   "ai-agents": ["ai agent", "ai agents", "agentic ai"],
   "software-engineering": ["software engineering"],
   "health-sciences": ["health sciences", "healthcare", "medicine"],
   "clinical-medicine": ["clinical medicine", "medical"],
+  nlp: ["natural language processing", "nlp"],
+  "computer-vision": ["computer vision", "cv"],
+  cybersecurity: ["cyber security", "cyber-security", "infosec", "security"],
 };
 for (const [key, aliases] of Object.entries(manualAliases)) {
   if (!aliasMap.has(key)) continue;
