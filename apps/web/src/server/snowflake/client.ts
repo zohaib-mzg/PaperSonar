@@ -109,10 +109,7 @@ export async function querySnowflake(
       warehouse: env.SNOWFLAKE_PUBLIC_WAREHOUSE,
       role: env.SNOWFLAKE_PUBLIC_ROLE,
       bindings: snowflakeBindings(bindings),
-      parameters: {
-        QUERY_TAG: "public-chatbot",
-        STATEMENT_TIMEOUT_IN_SECONDS: 30,
-      },
+      parameters: { QUERY_TAG: "public-chatbot" },
     }),
   });
 
