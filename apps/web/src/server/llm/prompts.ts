@@ -1,6 +1,25 @@
 import type { ComposeInput, PlannerInput } from "@/server/llm/types";
 
 export function plannerPrompt(input: PlannerInput): string {
+  const recent = input.recent
+    .map(
+      (turn) =>
+        `${turn.metric_id}|${JSON.stringify(turn.filters)}|${turn.interpretation}`,
+    )
+    .join("\n");
+  const metrics = input.metrics
+    .map(
+      (metric) =>
+        `${metric.id}|${metric.label}|${metric.description}|${metric.dimensions.join(",")}`,
+    )
+    .join("\n");
+  const categories = input.categories
+    .map(
+      (category) =>
+        `${category.key}|${category.label}|${category.aliases.join(",")}`,
+    )
+    .join("\n");
+
   return [
     "You select one approved metric and validated filters. You never write SQL.",
     "Return only JSON matching the schema. Use only category keys from the supplied list.",
@@ -10,9 +29,12 @@ export function plannerPrompt(input: PlannerInput): string {
     "Last year means the latest complete publication year in context.",
     "",
     `Question: ${input.message}`,
-    `Recent: ${JSON.stringify(input.recent)}`,
-    `Metrics: ${JSON.stringify(input.metrics)}`,
-    `Categories: ${JSON.stringify(input.categories)}`,
+    `Recent turns (metric_id|filters|interpretation):`,
+    recent || "none",
+    `Approved metrics (id|label|description|dimensions):`,
+    metrics,
+    `Approved categories (key|label|aliases):`,
+    categories,
   ].join("\n");
 }
 

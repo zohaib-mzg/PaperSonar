@@ -1,6 +1,7 @@
 import { env } from "@/server/env";
+import { LlmHttpError, parseRetryAfterMs } from "@/server/llm/errors";
 import { composerPrompt, plannerPrompt } from "@/server/llm/prompts";
-import type { ComposeInput, LlmProvider, PlannerInput } from "@/server/llm/types";
+import type { ComposeInput, LlmCallOptions, LlmProvider, PlannerInput } from "@/server/llm/types";
 
 function endpoint(): string {
   return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -8,7 +9,12 @@ function endpoint(): string {
   )}:generateContent`;
 }
 
-async function call(prompt: string, json: boolean, maxTokens: number): Promise<string> {
+async function call(
+  prompt: string,
+  json: boolean,
+  maxTokens: number,
+  signal?: AbortSignal,
+): Promise<string> {
   const response = await fetch(endpoint(), {
     method: "POST",
     headers: {
@@ -23,7 +29,7 @@ async function call(prompt: string, json: boolean, maxTokens: number): Promise<s
         ...(json ? { responseMimeType: "application/json" } : {}),
       },
     }),
-    signal: AbortSignal.timeout(8000),
+    signal: signal ?? AbortSignal.timeout(8000),
   });
   if (!response.ok) {
     let detail = "";
@@ -32,12 +38,12 @@ async function call(prompt: string, json: boolean, maxTokens: number): Promise<s
     } catch {
       // ignore unreadable error body
     }
-    const error = new Error(
-      `gemini_${response.status}${detail ? `: ${detail}` : ""}`,
-    ) as Error & { status?: number; code?: string };
-    error.status = response.status;
-    error.code = `gemini_${response.status}`;
-    throw error;
+    throw new LlmHttpError(
+      "gemini",
+      response.status,
+      detail,
+      parseRetryAfterMs(response.headers.get("retry-after"), detail),
+    );
   }
   const payload = (await response.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -47,11 +53,11 @@ async function call(prompt: string, json: boolean, maxTokens: number): Promise<s
 
 export const geminiProvider: LlmProvider = {
   name: "gemini",
-  async plan(input: PlannerInput) {
-    const text = await call(plannerPrompt(input), true, 800);
+  async plan(input: PlannerInput, options?: LlmCallOptions) {
+    const text = await call(plannerPrompt(input), true, 600, options?.signal);
     return JSON.parse(text);
   },
-  async compose(input: ComposeInput) {
-    return call(composerPrompt(input), false, 350);
+  async compose(input: ComposeInput, options?: LlmCallOptions) {
+    return call(composerPrompt(input), false, 350, options?.signal);
   },
 };

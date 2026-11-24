@@ -21,6 +21,43 @@ export class SnowflakeError extends Error {
 const MAX_ROWS = 200;
 const TIMEOUT_MS = 30_000;
 
+export type SnowflakeBinding = {
+  type: "TEXT" | "FIXED" | "REAL" | "BOOLEAN" | "DATE" | "TIMESTAMP_NTZ";
+  value: string | null;
+};
+
+function isTypedBinding(value: unknown): value is Binding {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "type" in value &&
+      "value" in value,
+  );
+}
+
+export function toBinding(value: unknown): SnowflakeBinding {
+  if (isTypedBinding(value)) {
+    if (value.value === null || value.value === undefined) {
+      return { type: "TEXT", value: null };
+    }
+    const raw = value.value as unknown;
+    if (raw instanceof Date) {
+      return { type: "TIMESTAMP_NTZ", value: raw.toISOString() };
+    }
+    return { type: value.type, value: String(raw) };
+  }
+
+  if (value === null || value === undefined) return { type: "TEXT", value: null };
+  if (value instanceof Date) return { type: "TIMESTAMP_NTZ", value: value.toISOString() };
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? { type: "FIXED", value: String(value) }
+      : { type: "REAL", value: String(value) };
+  }
+  if (typeof value === "boolean") return { type: "BOOLEAN", value: String(value) };
+  return { type: "TEXT", value: String(value) };
+}
+
 function assertReadOnly(sql: string): void {
   const first = sql.trimStart().slice(0, 12).toUpperCase();
   if (!first.startsWith("SELECT") && !first.startsWith("WITH")) {
@@ -28,9 +65,9 @@ function assertReadOnly(sql: string): void {
   }
 }
 
-function snowflakeBindings(bindings: Binding[]): Record<string, { type: string; value: SqlScalar }> {
+function snowflakeBindings(bindings: Binding[]): Record<string, SnowflakeBinding> {
   return Object.fromEntries(
-    bindings.map((binding, index) => [String(index + 1), binding]),
+    bindings.map((binding, index) => [String(index + 1), toBinding(binding)]),
   );
 }
 
