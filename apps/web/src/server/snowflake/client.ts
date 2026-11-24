@@ -115,11 +115,19 @@ export async function querySnowflake(
   });
 
   if (!response.ok && response.status !== 202) {
+    let detail = "";
+    try {
+      const body = (await response.json()) as { message?: string; code?: string };
+      if (body?.code) detail += ` code=${body.code}`;
+      if (body?.message) detail += ` message=${String(body.message).slice(0, 200)}`;
+    } catch {
+      // ignore unreadable body
+    }
     throw new SnowflakeError(
       response.status === 408 || response.status === 429
         ? "SNOWFLAKE_TIMEOUT"
         : "SNOWFLAKE_ERROR",
-      "Snowflake request was rejected",
+      `Snowflake request was rejected (${response.status})${detail}`.slice(0, 500),
     );
   }
 
@@ -140,7 +148,18 @@ export async function querySnowflake(
         headers: authHeaders(),
       });
       if (!poll.ok) {
-        throw new SnowflakeError("SNOWFLAKE_ERROR", "Snowflake poll failed");
+        let detail = "";
+        try {
+          const body = (await poll.json()) as { message?: string; code?: string };
+          if (body?.code) detail += ` code=${body.code}`;
+          if (body?.message) detail += ` message=${String(body.message).slice(0, 200)}`;
+        } catch {
+          // ignore unreadable body
+        }
+        throw new SnowflakeError(
+          "SNOWFLAKE_ERROR",
+          `Snowflake poll failed (${poll.status})${detail}`.slice(0, 500),
+        );
       }
       payload = (await poll.json()) as Record<string, unknown>;
       queryId = typeof payload.queryId === "string" ? payload.queryId : queryId;
