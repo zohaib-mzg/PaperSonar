@@ -75,8 +75,12 @@ export type ComposeInput = {
   caveats: string[];
 };
 
+export type LlmCallOptions = {
+  signal?: AbortSignal;
+};
+
 export interface LlmProvider {
   readonly name: "groq" | "gemini";
-  plan(input: PlannerInput): Promise<unknown>;
-  compose(input: ComposeInput): Promise<string>;
+  plan(input: PlannerInput, options?: LlmCallOptions): Promise<unknown>;
+  compose(input: ComposeInput, options?: LlmCallOptions): Promise<string>;
 }

@@ -1,10 +1,16 @@
 import { env } from "@/server/env";
+import { LlmHttpError, parseRetryAfterMs } from "@/server/llm/errors";
 import { composerPrompt, plannerPrompt, PLANNER_SCHEMA_HINT } from "@/server/llm/prompts";
-import type { ComposeInput, LlmProvider, PlannerInput } from "@/server/llm/types";
+import type { ComposeInput, LlmCallOptions, LlmProvider, PlannerInput } from "@/server/llm/types";
 
 const ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 
-async function call(messages: Array<{ role: string; content: string }>, json: boolean, maxTokens: number) {
+async function call(
+  messages: Array<{ role: string; content: string }>,
+  json: boolean,
+  maxTokens: number,
+  signal?: AbortSignal,
+) {
   const response = await fetch(ENDPOINT, {
     method: "POST",
     headers: {
@@ -18,7 +24,7 @@ async function call(messages: Array<{ role: string; content: string }>, json: bo
       messages,
       ...(json ? { response_format: { type: "json_object" } } : {}),
     }),
-    signal: AbortSignal.timeout(8000),
+    signal: signal ?? AbortSignal.timeout(8000),
   });
   if (!response.ok) {
     let detail = "";
@@ -27,12 +33,12 @@ async function call(messages: Array<{ role: string; content: string }>, json: bo
     } catch {
       // ignore unreadable error body
     }
-    const error = new Error(
-      `groq_${response.status}${detail ? `: ${detail}` : ""}`,
-    ) as Error & { status?: number; code?: string };
-    error.status = response.status;
-    error.code = `groq_${response.status}`;
-    throw error;
+    throw new LlmHttpError(
+      "groq",
+      response.status,
+      detail,
+      parseRetryAfterMs(response.headers.get("retry-after"), detail),
+    );
   }
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
@@ -42,18 +48,19 @@ async function call(messages: Array<{ role: string; content: string }>, json: bo
 
 export const groqProvider: LlmProvider = {
   name: "groq",
-  async plan(input: PlannerInput) {
+  async plan(input: PlannerInput, options?: LlmCallOptions) {
     const text = await call(
       [
         { role: "system", content: `${plannerPrompt(input)}\n${PLANNER_SCHEMA_HINT}` },
         { role: "user", content: input.message },
       ],
       true,
-      800,
+      600,
+      options?.signal,
     );
     return JSON.parse(text);
   },
-  async compose(input: ComposeInput) {
+  async compose(input: ComposeInput, options?: LlmCallOptions) {
     return call(
       [
         { role: "system", content: composerPrompt(input) },
@@ -61,6 +68,7 @@ export const groqProvider: LlmProvider = {
       ],
       false,
       350,
+      options?.signal,
     );
   },
 };
