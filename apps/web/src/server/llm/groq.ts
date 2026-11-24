@@ -20,7 +20,20 @@ async function call(messages: Array<{ role: string; content: string }>, json: bo
     }),
     signal: AbortSignal.timeout(8000),
   });
-  if (!response.ok) throw new Error(`groq_${response.status}`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = (await response.text()).slice(0, 500);
+    } catch {
+      // ignore unreadable error body
+    }
+    const error = new Error(
+      `groq_${response.status}${detail ? `: ${detail}` : ""}`,
+    ) as Error & { status?: number; code?: string };
+    error.status = response.status;
+    error.code = `groq_${response.status}`;
+    throw error;
+  }
   const payload = (await response.json()) as {
     choices?: Array<{ message?: { content?: string } }>;
   };

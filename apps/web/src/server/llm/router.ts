@@ -4,7 +4,7 @@ import { geminiProvider } from "@/server/llm/gemini";
 import { groqProvider } from "@/server/llm/groq";
 import type { ComposeInput, LlmProvider, PlannerInput } from "@/server/llm/types";
 import { validateComposition, validatePlan } from "@/server/llm/validate";
-import { log } from "@/server/logger";
+import { log, logError } from "@/server/logger";
 import { collectCategoryAliases, metrics, publicCategoryList } from "@/server/metrics/catalogue";
 
 const FAILURE_THRESHOLD = 3;
@@ -73,9 +73,9 @@ async function withFallback<T>(
       await recordSuccess(provider.name);
       log("info", "llm_success", { provider: provider.name, fallback_used: attemptedFallback });
       return { provider: provider.name, value };
-    } catch {
+    } catch (error) {
       await recordFailure(provider.name);
-      log("warn", "llm_failure", {
+      logError("llm_failure", error, {
         provider: provider.name,
         fallback_used: attemptedFallback,
       });

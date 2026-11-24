@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import { env } from "@/server/env";
+import { logError } from "@/server/logger";
 
 type CacheValue = { value: unknown; expiresAt: number | null };
 
@@ -58,7 +59,8 @@ export const cache = {
     try {
       const result = await redis.ping();
       return result === "PONG" ? "ok" : "error";
-    } catch {
+    } catch (error) {
+      logError("cache_ping_failed", error);
       return "error";
     }
   },

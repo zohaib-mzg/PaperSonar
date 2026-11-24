@@ -25,7 +25,20 @@ async function call(prompt: string, json: boolean, maxTokens: number): Promise<s
     }),
     signal: AbortSignal.timeout(8000),
   });
-  if (!response.ok) throw new Error(`gemini_${response.status}`);
+  if (!response.ok) {
+    let detail = "";
+    try {
+      detail = (await response.text()).slice(0, 500);
+    } catch {
+      // ignore unreadable error body
+    }
+    const error = new Error(
+      `gemini_${response.status}${detail ? `: ${detail}` : ""}`,
+    ) as Error & { status?: number; code?: string };
+    error.status = response.status;
+    error.code = `gemini_${response.status}`;
+    throw error;
+  }
   const payload = (await response.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
