@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { toBinding } from "@/server/snowflake/client";
+import { coerceValue, toBinding } from "@/server/snowflake/client";
 
 describe("Snowflake SQL API bindings", () => {
   it("converts integers to FIXED string bindings", () => {
@@ -36,5 +36,17 @@ describe("Snowflake SQL API bindings", () => {
       type: "FIXED",
       value: "2025",
     });
+  });
+});
+
+describe("Snowflake value coercion", () => {
+  it("converts epoch-day DATE and epoch-second TIMESTAMP values", () => {
+    expect(coerceValue(20781, "DATE")).toBe("2026-11-24");
+    expect(coerceValue("1795490613.392000000", "TIMESTAMP_LTZ")).toBe("2026-11-24T03:23:33.392Z");
+  });
+
+  it("keeps ISO values readable", () => {
+    expect(coerceValue("2026-11-24", "DATE")).toBe("2026-11-24");
+    expect(coerceValue("2026-11-24 03:23:33.392", "TIMESTAMP_NTZ")).toBe("2026-11-24T03:23:33.392Z");
   });
 });

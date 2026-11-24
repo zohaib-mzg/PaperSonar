@@ -2,6 +2,7 @@ import {
   buildAnswer,
   buildComparisonAnswer,
   citationsFor,
+  dateOnly,
   defaultFreshness,
   emptyFacts,
   type AnswerEnvelope,
@@ -43,7 +44,7 @@ function asNumber(value: unknown): number | null {
 }
 
 async function getFreshness(): Promise<FreshnessContext> {
-  const cached = await cache.get<FreshnessContext>("freshness:v1");
+  const cached = await cache.get<FreshnessContext>("freshness:v2");
   if (cached) return cached;
   try {
     const result = await querySnowflake(
@@ -52,12 +53,14 @@ async function getFreshness(): Promise<FreshnessContext> {
     );
     const row = result.rows[0] ?? {};
     const freshness: FreshnessContext = {
-      latest_snapshot_date: typeof row.LATEST_SNAPSHOT_DATE === "string" ? row.LATEST_SNAPSHOT_DATE : null,
-      latest_published_at: typeof row.LATEST_PUBLISHED_AT === "string" ? row.LATEST_PUBLISHED_AT : null,
+      latest_snapshot_date:
+        typeof row.LATEST_SNAPSHOT_DATE === "string" ? dateOnly(row.LATEST_SNAPSHOT_DATE) : null,
+      latest_published_at:
+        typeof row.LATEST_PUBLISHED_AT === "string" ? dateOnly(row.LATEST_PUBLISHED_AT) : null,
       total_outputs: asNumber(row.TOTAL_OUTPUTS),
-      retrieved_on: typeof row.RETRIEVED_ON === "string" ? row.RETRIEVED_ON : null,
+      retrieved_on: typeof row.RETRIEVED_ON === "string" ? dateOnly(row.RETRIEVED_ON) : null,
     };
-    await cache.set("freshness:v1", freshness, 300);
+    await cache.set("freshness:v2", freshness, 300);
     return freshness;
   } catch (error) {
     logError("chat_freshness_failed", error, {
@@ -203,7 +206,7 @@ export async function answerChat(
 
   const sessionId = input.session_id ?? requestIdValue;
   const recent = await getRecentTurns(sessionId);
-  const cacheKey = `chat:v1:${canonicalHash({
+  const cacheKey = `chat:v2:${canonicalHash({
     message: input.message.toLowerCase(),
     recent: recent.map((turn) => turn.metric_id),
   })}`;
@@ -393,7 +396,13 @@ export async function answerChat(
       const composed = await composeWithLlm({
         metricLabel: envelope.metric_label ?? metric.label,
         intent: envelope.intent,
-        facts: { values: envelope.facts.values },
+        facts: {
+          values: envelope.facts.values,
+          rows: envelope.facts.rows.slice(0, 5),
+          denominator: envelope.facts.denominators.join("; "),
+          as_of: envelope.facts.as_of,
+          snapshot_date: envelope.facts.snapshot_date,
+        },
         caveats: envelope.facts.caveats,
       });
       if (composed) {

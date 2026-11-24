@@ -15,6 +15,8 @@ export function AnswerEvidence({ answer }: { answer: ChatAnswer }) {
   const [sent, setSent] = useState(false);
   const rows = answer.facts.rows.slice(0, 8);
   const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+  const asOf = answer.facts.as_of ?? "latest snapshot";
+  const snapshot = answer.facts.snapshot_date;
 
   const feedback = async (rating: "helpful" | "not_helpful", reason: string) => {
     if (!answer.request_id || sent) return;
@@ -62,8 +64,8 @@ export function AnswerEvidence({ answer }: { answer: ChatAnswer }) {
       </div>
       <div className="evidence-line">
         <span>AS OF</span>
-        {answer.facts.as_of ?? "As of latest snapshot"}
-        {answer.facts.snapshot_date ? ` · snapshot ${answer.facts.snapshot_date}` : ""}
+        {asOf}
+        {snapshot && snapshot !== asOf ? ` · snapshot ${snapshot}` : ""}
       </div>
       {answer.facts.denominators.length > 0 ? (
         <div className="evidence-line">
