@@ -31,7 +31,7 @@ describe("150-question eval", () => {
   it("resolves the three shipped chips deterministically", () => {
     const growth = resolveQuestion("Which topics grew fastest in 2025?");
     expect(growth).toMatchObject({ intent: "metric", metric_ids: ["M01"] });
-    expect(growth.filters.year_from).toBe(2025);
+    expect(growth.filters.year_from).toBe(2024);
     expect(growth.filters.year_to).toBe(2025);
 
     const citations = resolveQuestion("How many citations does RAG have?");
@@ -45,6 +45,22 @@ describe("150-question eval", () => {
       "OPENALEX",
       "CROSSREF",
     ]);
+  });
+
+  it("keeps the growth window and resolves a Medical follow-up", () => {
+    const growth = resolveQuestion("Which topics grew fastest in 2025?");
+    const followUp = resolveQuestion("What about Medical?", [
+      {
+        metric_id: growth.metric_ids[0],
+        filters: growth.filters,
+        interpretation: growth.interpretation,
+      },
+    ]);
+    expect(followUp.metric_ids).toEqual(["M01"]);
+    expect(followUp.filters.category_key).toBe("clinical-medicine");
+    expect(followUp.filters.year_from).toBe(2024);
+    expect(followUp.filters.year_to).toBe(2025);
+    expect(followUp.closest_match_disclosure).toContain("Clinical Medicine");
   });
 
   it("discloses closest-category matches and never silently maps RAG to AI/ML", () => {

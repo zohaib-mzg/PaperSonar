@@ -98,6 +98,7 @@ const manualAliases: Record<string, string[]> = {
   "ai-agents": ["ai agent", "ai agents", "agentic ai"],
   "software-engineering": ["software engineering"],
   "health-sciences": ["health sciences", "healthcare", "medicine"],
+  "clinical-medicine": ["clinical medicine", "medical"],
 };
 for (const [key, aliases] of Object.entries(manualAliases)) {
   if (!aliasMap.has(key)) continue;

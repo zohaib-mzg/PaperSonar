@@ -208,9 +208,15 @@ function applyYears(
     return;
   }
   if (/\blast year\b/i.test(text) && years.length === 0) {
-    filters.year_from = latest - 1;
-    filters.year_to = latest - 1;
-    disclosures.push(`“Last year” is interpreted as ${latest - 1}, the latest complete publication year.`);
+    if (metricId === "M01") {
+      filters.year_from = latest - 1;
+      filters.year_to = latest;
+      disclosures.push(`“Last year” growth compares ${latest - 1} with ${latest}.`);
+    } else {
+      filters.year_from = latest;
+      filters.year_to = latest;
+      disclosures.push(`“Last year” is interpreted as ${latest}, the latest complete publication year.`);
+    }
     return;
   }
   if (years.length >= 2) {
@@ -219,8 +225,15 @@ function applyYears(
     return;
   }
   if (years.length === 1) {
-    filters.year_from = years[0];
-    filters.year_to = years[0];
+    const year = years[0];
+    if (metricId === "M01") {
+      filters.year_from = year - 1;
+      filters.year_to = year;
+      disclosures.push(`Growth for ${year} compares ${year - 1} with ${year}.`);
+    } else {
+      filters.year_from = year;
+      filters.year_to = year;
+    }
     return;
   }
   filters.year_from = metricId === "M01" ? latest - 1 : latest - 4;
@@ -295,9 +308,23 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
     if (secondCategory) filters.category_key_b = secondCategory.key;
     if (sources[0]) filters.source_name = sources[0].name;
     const years = matchedYears(text);
-    if (years.length === 1) {
+    if (years.length >= 2) {
       filters.year_from = years[0];
-      filters.year_to = years[0];
+      filters.year_to = years[years.length - 1];
+    } else if (years.length === 1) {
+      const year = years[0];
+      filters.year_from = previous.metric_id === "M01" ? year - 1 : year;
+      filters.year_to = year;
+      if (previous.metric_id === "M01") {
+        disclosures.push(`Growth for ${year} compares ${year - 1} with ${year}.`);
+      }
+    } else if (previous.metric_id === "M01") {
+      const from = Number(filters.year_from);
+      const to = Number(filters.year_to);
+      if (Number.isInteger(from) && Number.isInteger(to) && from === to) {
+        filters.year_from = to - 1;
+        disclosures.push(`Growth compares ${to - 1} with ${to}.`);
+      }
     }
     const disclosure = disclosureFor(firstCategory);
     if (disclosure) disclosures.push(disclosure);
@@ -450,10 +477,18 @@ export function planFromLlm(
   plan: PlannerOutput,
   provider: "groq" | "gemini",
 ): ResolvedPlan {
+  const filters = { ...plan.filters } as Filters;
+  if (plan.metric_ids[0] === "M01") {
+    const from = Number(filters.year_from);
+    const to = Number(filters.year_to);
+    if (Number.isInteger(from) && Number.isInteger(to) && from === to) {
+      filters.year_from = to - 1;
+    }
+  }
   return {
     intent: plan.intent,
     metric_ids: plan.metric_ids,
-    filters: { ...plan.filters } as Filters,
+    filters,
     comparison: plan.comparison
       ? {
           metric_id: plan.comparison.metric_id,

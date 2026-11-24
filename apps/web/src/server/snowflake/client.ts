@@ -34,11 +34,44 @@ function snowflakeBindings(bindings: Binding[]): Record<string, { type: string; 
   );
 }
 
-function coerceValue(value: unknown, columnType: string): SqlScalar {
+function epochDaysToDate(text: string): string | null {
+  const days = Number(text);
+  if (!Number.isFinite(days) || Math.abs(days) > 100_000) return null;
+  const date = new Date(days * 86_400_000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
+}
+
+function epochSecondsToIso(text: string): string | null {
+  const seconds = Number(text);
+  if (!Number.isFinite(seconds) || Math.abs(seconds) > 10_000_000_000) return null;
+  const date = new Date(seconds * 1000);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+export function coerceValue(value: unknown, columnType: string): SqlScalar {
   if (value === null || value === undefined) return null;
-  if (typeof value === "boolean" || typeof value === "number") return value;
   const type = columnType.toUpperCase();
   const text = String(value);
+
+  if (type === "DATE" || type.endsWith("_DATE")) {
+    const iso = text.match(/^\d{4}-\d{2}-\d{2}/);
+    if (iso) return iso[0];
+    return epochDaysToDate(text) ?? text;
+  }
+
+  if (type.startsWith("TIMESTAMP") || type === "DATETIME") {
+    const iso = text.match(/^\d{4}-\d{2}-\d{2}T/);
+    if (iso) {
+      const parsed = Date.parse(text);
+      return Number.isFinite(parsed) ? new Date(parsed).toISOString() : text;
+    }
+    const epoch = epochSecondsToIso(text);
+    if (epoch) return epoch;
+    const parsed = Date.parse(text.includes("T") ? text : `${text.replace(" ", "T")}Z`);
+    return Number.isFinite(parsed) ? new Date(parsed).toISOString() : text;
+  }
+
+  if (typeof value === "boolean" || typeof value === "number") return value;
   if (/FIXED|REAL|NUMBER|FLOAT|DECIMAL/.test(type) && text.trim() !== "") {
     const number = Number(text);
     return Number.isFinite(number) ? number : text;
