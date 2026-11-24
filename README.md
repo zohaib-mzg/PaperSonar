@@ -6,11 +6,20 @@
 </p>
 
 <p align="center">
-  <img alt="Phase 1 delivered" src="https://img.shields.io/badge/Phase%201-delivered-2ea44f"> 
-  <img alt="Phase 2 delivered" src="https://img.shields.io/badge/Phase%202-delivered-2ea44f"> 
+  <a href="https://paper-sonar.vercel.app/"><img alt="Live Terminal" src="https://img.shields.io/badge/Live%20Terminal-paper--sonar.vercel.app-0b7285?style=for-the-badge&logo=vercel&logoColor=white"></a>
+</p>
+
+<p align="center">
+  <img alt="Phase 1 delivered" src="https://img.shields.io/badge/Phase%201-delivered-2ea44f">
+  <img alt="Phase 2 delivered" src="https://img.shields.io/badge/Phase%202-delivered-2ea44f">
   <img alt="Phase 3 delivered" src="https://img.shields.io/badge/Phase%203-delivered-2ea44f">
   <img alt="Live on Snowflake" src="https://img.shields.io/badge/live-Snowflake%20trial-0b7285">
   <img alt="Tests" src="https://img.shields.io/badge/tests-270%20passing-2ea44f">
+</p>
+
+<p align="center">
+  <a href="https://paper-sonar.vercel.app/"><b>Explore the Live Research Terminal</b></a><br>
+  <sub>Grounded public analytics over published Snowflake reporting data</sub>
 </p>
 
 ---
@@ -22,6 +31,8 @@ publications, preprints, datasets, research software, authors and creators,
 institutions, venues, citations and related-output relationships. It exists to
 answer one question honestly: **which research directions are worth attention,
 and what evidence supports that claim?**
+
+> **Live Terminal:** [paper-sonar.vercel.app](https://paper-sonar.vercel.app/) — Public, read-only research analytics and grounded chatbot over published Snowflake reporting data.
 
 Every number in this repository is reproducible from committed SQL against a
 live Snowflake account, and every number carries its denominator, its source
