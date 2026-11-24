@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { chatRequestSchema } from "@/server/chat/schema";
 import { answerChat } from "@/server/chat/service";
-import { log } from "@/server/logger";
+import { logError } from "@/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,10 +41,7 @@ export async function POST(request: NextRequest) {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
-    log("error", "chat_route_failure", {
-      route: "/api/chat",
-      error_code: error instanceof Error ? error.name : "UNKNOWN",
-    });
+    logError("chat_route_failure", error, { route: "/api/chat" });
     return NextResponse.json(
       {
         status: "INTERNAL",

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cache } from "@/server/cache";
 import { feedbackRequestSchema } from "@/server/chat/schema";
-import { enforceLimit } from "@/server/rate-limit";
-import { log } from "@/server/logger";
+import { enforceLimit, type LimitResult } from "@/server/rate-limit";
+import { log, logError } from "@/server/logger";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,14 +26,25 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ status: "INVALID" }, { status: 400 });
   }
 
-  const limit = await enforceLimit(clientIp(request.headers), "feedback");
+  let limit: LimitResult;
+  try {
+    limit = await enforceLimit(clientIp(request.headers), "feedback");
+  } catch (error) {
+    logError("feedback_rate_limit_failed", error, { route: "/api/feedback" });
+    return NextResponse.json({ status: "INTERNAL" }, { status: 500 });
+  }
   if (!limit.success) {
     return NextResponse.json({ status: "RATE_LIMITED" }, { status: 429 });
   }
 
   const key = `feedback:aggregate:${parsed.data.rating}:${parsed.data.reason}`;
-  const current = (await cache.get<number>(key)) ?? 0;
-  await cache.set(key, current + 1, 60 * 60 * 24 * 30);
+  try {
+    const current = (await cache.get<number>(key)) ?? 0;
+    await cache.set(key, current + 1, 60 * 60 * 24 * 30);
+  } catch (error) {
+    logError("feedback_store_failed", error, { route: "/api/feedback" });
+    return NextResponse.json({ status: "INTERNAL" }, { status: 500 });
+  }
 
   log("info", "feedback_recorded", {
     route: "/api/feedback",

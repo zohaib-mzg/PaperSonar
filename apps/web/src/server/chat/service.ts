@@ -12,7 +12,7 @@ import { getRecentTurns, recordTurn } from "@/server/chat/session";
 import { cache, canonicalHash } from "@/server/cache";
 import { env, missingForChat } from "@/server/env";
 import { composeWithLlm, planWithLlm } from "@/server/llm/router";
-import { log, requestId } from "@/server/logger";
+import { log, logError, requestId } from "@/server/logger";
 import { metricById } from "@/server/metrics/catalogue";
 import { compileMetric } from "@/server/metrics/compiler";
 import { validateFilters, type Filters } from "@/server/metrics/guards";
@@ -59,7 +59,10 @@ async function getFreshness(): Promise<FreshnessContext> {
     };
     await cache.set("freshness:v1", freshness, 300);
     return freshness;
-  } catch {
+  } catch (error) {
+    logError("chat_freshness_failed", error, {
+      source: "PAPERSONAR.PROJECT_REPORTING.VW_PUBLIC_CORPUS_SUMMARY",
+    });
     return defaultFreshness;
   }
 }
@@ -337,12 +340,22 @@ export async function answerChat(
       const sideMetric = metricById.get(plan.comparison.metric_id) ?? metric;
       const sides: SideResult[] = [];
       for (const side of plan.comparison.sides) {
-        const sideChecked = validateFilters(mergeYearFilters(checked.filters, side.filters as Filters));
-        const compiled = compileMetric(sideMetric.id, sideChecked.filters);
-        const result = await querySnowflake(compiled.sql, compiled.bindings);
-        finalRowCount += result.rowCount;
-        if (result.queryId) finalQueryId = result.queryId;
-        sides.push({ side, rows: result.rows });
+        try {
+          const sideChecked = validateFilters(mergeYearFilters(checked.filters, side.filters as Filters));
+          const compiled = compileMetric(sideMetric.id, sideChecked.filters);
+          const result = await querySnowflake(compiled.sql, compiled.bindings);
+          finalRowCount += result.rowCount;
+          if (result.queryId) finalQueryId = result.queryId;
+          sides.push({ side, rows: result.rows });
+        } catch (error) {
+          logError("metric_query_failed", error, {
+            request_id: requestIdValue,
+            metric_id: sideMetric.id,
+            phase: "comparison_side",
+            side: side.label,
+          });
+          throw error;
+        }
       }
       envelope = buildComparisonAnswer(
         plan,
@@ -353,18 +366,27 @@ export async function answerChat(
         providerFallbackUsed,
       );
     } else {
-      const compiled = compileMetric(metricId, checked.filters);
-      const result = await querySnowflake(compiled.sql, compiled.bindings);
-      finalRowCount = result.rowCount;
-      finalQueryId = result.queryId;
-      envelope = buildAnswer({
-        plan,
-        metric,
-        rows: result.rows,
-        freshness,
-        provider: plan.provider,
-        fallbackUsed: providerFallbackUsed,
-      });
+      try {
+        const compiled = compileMetric(metricId, checked.filters);
+        const result = await querySnowflake(compiled.sql, compiled.bindings);
+        finalRowCount = result.rowCount;
+        finalQueryId = result.queryId;
+        envelope = buildAnswer({
+          plan,
+          metric,
+          rows: result.rows,
+          freshness,
+          provider: plan.provider,
+          fallbackUsed: providerFallbackUsed,
+        });
+      } catch (error) {
+        logError("metric_query_failed", error, {
+          request_id: requestIdValue,
+          metric_id: metricId,
+          phase: "single",
+        });
+        throw error;
+      }
     }
 
     if (envelope.status === "answered" && env.LLM_MODE !== "off") {
@@ -427,7 +449,7 @@ export async function answerChat(
       plan,
     );
     body.degraded = finalErrorCode === "SNOWFLAKE_TIMEOUT" ? "snowflake_timeout" : "snowflake_error";
-    log("error", "chat_complete", {
+    logError("chat_complete", error, {
       request_id: requestIdValue,
       route: "/api/chat",
       status: finalStatus,

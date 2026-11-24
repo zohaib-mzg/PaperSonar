@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { cache } from "@/server/cache";
 import { missingForChat } from "@/server/env";
+import { logError } from "@/server/logger";
 import { compileMetric } from "@/server/metrics/compiler";
 import { querySnowflake, SnowflakeError } from "@/server/snowflake/client";
 import type { SnowflakeRow } from "@/server/snowflake/types";
@@ -55,7 +56,12 @@ export async function GET() {
     );
   }
 
-  const cached = await cache.get<DataStatusRow[]>(CACHE_KEY);
+  let cached: DataStatusRow[] | null = null;
+  try {
+    cached = await cache.get<DataStatusRow[]>(CACHE_KEY);
+  } catch (error) {
+    logError("data_status_cache_failed", error, { operation: "get" });
+  }
   if (cached) {
     return NextResponse.json(
       { status: "ok", rows: cached, cached: true },
@@ -67,12 +73,17 @@ export async function GET() {
     const query = compileMetric("M18", {});
     const result = await querySnowflake(query.sql, query.bindings);
     const rows = result.rows.map(publicRow);
-    await cache.set(CACHE_KEY, rows, CACHE_TTL_SECONDS);
+    try {
+      await cache.set(CACHE_KEY, rows, CACHE_TTL_SECONDS);
+    } catch (error) {
+      logError("data_status_cache_failed", error, { operation: "set" });
+    }
     return NextResponse.json(
       { status: "ok", rows, cached: false },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch (error) {
+    logError("data_status_failed", error, { metric_id: "M18" });
     const reason =
       error instanceof SnowflakeError && error.code === "SNOWFLAKE_TIMEOUT"
         ? "DATA_SOURCE_TIMEOUT"

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { APP_VERSION, env, missingForChat, providerStatus } from "@/server/env";
 import { cache } from "@/server/cache";
-import { log } from "@/server/logger";
+import { logError } from "@/server/logger";
 import { querySnowflake, SnowflakeError } from "@/server/snowflake/client";
 
 export const runtime = "nodejs";
@@ -37,7 +37,12 @@ export async function GET() {
 
   let snowflake: HealthCheck["checks"]["snowflake"] = "missing";
   if (!snowflakeRequired) {
-    const cached = await cache.get<HealthCheck["checks"]["snowflake"]>("health:snowflake");
+    let cached: HealthCheck["checks"]["snowflake"] | null = null;
+    try {
+      cached = await cache.get<HealthCheck["checks"]["snowflake"]>("health:snowflake");
+    } catch (error) {
+      logError("health.cache_failed", error, { operation: "get" });
+    }
     if (cached) {
       snowflake = cached;
     } else {
@@ -45,18 +50,16 @@ export async function GET() {
         await querySnowflake("SELECT 1 AS OK");
         snowflake = "ok";
       } catch (error) {
-        const err = error as { message?: string; code?: string; name?: string; sqlState?: string };
-        log("error", "health.snowflake_failed", {
-          error_name: err?.name,
-          error_code: err?.code,
-          error_message: err?.message,
-          sql_state: err?.sqlState,
-        });
+        logError("health.snowflake_failed", error, { check: "SELECT 1 AS OK" });
         snowflake = error instanceof SnowflakeError && error.code === "NOT_CONFIGURED"
           ? "missing"
           : "error";
       }
-      await cache.set("health:snowflake", snowflake, 60);
+      try {
+        await cache.set("health:snowflake", snowflake, 60);
+      } catch (error) {
+        logError("health.cache_failed", error, { operation: "set" });
+      }
     }
   }
 

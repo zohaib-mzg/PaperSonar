@@ -10,10 +10,11 @@ import type {
 export class SnowflakeError extends Error {
   readonly code: "NOT_CONFIGURED" | "SNOWFLAKE_TIMEOUT" | "SNOWFLAKE_ERROR";
 
-  constructor(code: SnowflakeError["code"], message: string) {
+  constructor(code: SnowflakeError["code"], message: string, cause?: unknown) {
     super(message);
     this.name = "SnowflakeError";
     this.code = code;
+    if (cause !== undefined) (this as Error & { cause?: unknown }).cause = cause;
   }
 }
 
@@ -84,9 +85,9 @@ async function fetchWithTimeout(url: string, init: RequestInit): Promise<Respons
     return await fetch(url, { ...init, signal: AbortSignal.timeout(TIMEOUT_MS) });
   } catch (error) {
     if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
-      throw new SnowflakeError("SNOWFLAKE_TIMEOUT", "Snowflake query timed out");
+      throw new SnowflakeError("SNOWFLAKE_TIMEOUT", "Snowflake query timed out", error);
     }
-    throw new SnowflakeError("SNOWFLAKE_ERROR", "Snowflake request failed");
+    throw new SnowflakeError("SNOWFLAKE_ERROR", "Snowflake request failed", error);
   }
 }
 
@@ -115,19 +116,26 @@ export async function querySnowflake(
 
   if (!response.ok && response.status !== 202) {
     let detail = "";
+    let sqlState: string | undefined;
     try {
-      const body = (await response.json()) as { message?: string; code?: string };
+      const body = (await response.json()) as { message?: string; code?: string; sqlState?: string };
       if (body?.code) detail += ` code=${body.code}`;
+      if (body?.sqlState) {
+        sqlState = body.sqlState;
+        detail += ` sqlState=${body.sqlState}`;
+      }
       if (body?.message) detail += ` message=${String(body.message).slice(0, 200)}`;
     } catch {
       // ignore unreadable body
     }
-    throw new SnowflakeError(
+    const error = new SnowflakeError(
       response.status === 408 || response.status === 429
         ? "SNOWFLAKE_TIMEOUT"
         : "SNOWFLAKE_ERROR",
       `Snowflake request was rejected (${response.status})${detail}`.slice(0, 500),
     );
+    if (sqlState) (error as Error & { sqlState?: string }).sqlState = sqlState;
+    throw error;
   }
 
   let payload = (await response.json()) as Record<string, unknown>;
@@ -148,17 +156,24 @@ export async function querySnowflake(
       });
       if (!poll.ok) {
         let detail = "";
+        let sqlState: string | undefined;
         try {
-          const body = (await poll.json()) as { message?: string; code?: string };
+          const body = (await poll.json()) as { message?: string; code?: string; sqlState?: string };
           if (body?.code) detail += ` code=${body.code}`;
+          if (body?.sqlState) {
+            sqlState = body.sqlState;
+            detail += ` sqlState=${body.sqlState}`;
+          }
           if (body?.message) detail += ` message=${String(body.message).slice(0, 200)}`;
         } catch {
           // ignore unreadable body
         }
-        throw new SnowflakeError(
+        const error = new SnowflakeError(
           "SNOWFLAKE_ERROR",
           `Snowflake poll failed (${poll.status})${detail}`.slice(0, 500),
         );
+        if (sqlState) (error as Error & { sqlState?: string }).sqlState = sqlState;
+        throw error;
       }
       payload = (await poll.json()) as Record<string, unknown>;
       queryId = typeof payload.queryId === "string" ? payload.queryId : queryId;
