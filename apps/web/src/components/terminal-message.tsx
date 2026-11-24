@@ -14,7 +14,7 @@ export function TerminalMessage({ message }: { message: TerminalMessageData }) {
       {message.answer ? (
         <div className="answer-body">
           <AnswerEvidence answer={message.answer} />
-          {message.answer.chart ? <AnswerChart chart={message.answer.chart} /> : null}
+          {message.answer.chart ? <AnswerChart key={`${message.id}-chart`} chart={message.answer.chart} /> : null}
           {message.answer.facts.coverage_note ? (
             <p className="chart-note">{message.answer.facts.coverage_note}</p>
           ) : null}

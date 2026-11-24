@@ -95,7 +95,7 @@ export function TerminalShell() {
     setActivity([
       { id: 1, label: "Interface loaded", state: "done" },
       { id: 2, label: "Question accepted", state: "done" },
-      { id: nextId(), label: "Querying published data", state: "pending" },
+      { id: nextId(), label: "Query running", state: "pending" },
     ]);
     track("chat_submit", {});
     textareaRef.current?.focus();
@@ -109,13 +109,14 @@ export function TerminalShell() {
             : message,
         ),
       );
+      const noData = answer.status === "DATA_UNAVAILABLE" || (answer.status === "answered" && (answer.facts?.rows?.length ?? 0) === 0);
       setActivity([
         { id: 1, label: "Interface loaded", state: "done" },
         { id: 2, label: "Question accepted", state: "done" },
         {
           id: nextId(),
-          label: answer.status === "answered" ? "Answer grounded" : "Answer returned",
-          state: "done",
+          label: noData ? "No data found" : answer.status === "answered" ? "Answer grounded" : "Answer returned",
+          state: noData ? "failed" : "done",
         },
       ]);
       track("chat_answer", {

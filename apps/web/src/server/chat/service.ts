@@ -206,9 +206,16 @@ export async function answerChat(
 
   const sessionId = input.session_id ?? requestIdValue;
   const recent = await getRecentTurns(sessionId);
-  const cacheKey = `chat:v2:${canonicalHash({
-    message: input.message.toLowerCase(),
-    recent: recent.map((turn) => turn.metric_id),
+
+  const { plan, providerFallbackUsed } = await resolveWithFallback(input.message, recent);
+  finalMetricId = plan.metric_ids[0] ?? null;
+  finalFallback = providerFallbackUsed;
+
+  const cacheKey = `chat:v3:${canonicalHash({
+    intent: plan.intent,
+    metric_ids: plan.metric_ids,
+    filters: plan.filters,
+    comparison: plan.comparison ?? null,
   })}`;
   const cached = await cache.get<AnswerEnvelope>(cacheKey);
   finalCached = Boolean(cached);
@@ -218,15 +225,15 @@ export async function answerChat(
       cached: boolean;
     };
     finalStatus = cached.status;
-    finalMetricId = cached.metric_id;
-    finalProvider = cached.provider;
+    finalMetricId = cached.metric_id ?? finalMetricId;
+    finalProvider = cached.provider ?? plan.provider;
     log("info", "chat_complete", {
       request_id: requestIdValue,
       route: "/api/chat",
       status: finalStatus,
       metric_id: finalMetricId,
       provider: finalProvider,
-      fallback_used: false,
+      fallback_used: providerFallbackUsed,
       cached: true,
       row_count: cached.facts.rows.length,
       latency_ms: Date.now() - startedAt,
@@ -235,10 +242,6 @@ export async function answerChat(
     });
     return { status: 200, body };
   }
-
-  const { plan, providerFallbackUsed } = await resolveWithFallback(input.message, recent);
-  finalMetricId = plan.metric_ids[0] ?? null;
-  finalFallback = providerFallbackUsed;
 
   if (plan.intent === "refuse") {
     finalStatus = "refused";
@@ -264,7 +267,7 @@ export async function answerChat(
     const body = envelopeBase(
       requestIdValue,
       "clarify",
-      plan.clarification ?? "I need a little more detail to answer that question.",
+      plan.clarification ?? "Which research-data question should I answer? Options: “How many RAG outputs were published in 2025?”, “Which topics grew fastest in the latest complete year?”, or “Compare OpenAlex and Crossref coverage”.",
       freshness,
       plan,
     );
@@ -329,7 +332,7 @@ export async function answerChat(
     const body = envelopeBase(
       requestIdValue,
       "clarify",
-      "Please tell me which title words to search for.",
+      "Which title should I search for? Options: “attention is all you need”, “retrieval augmented generation”, or “BERT”.",
       freshness,
       plan,
     );
@@ -374,14 +377,45 @@ export async function answerChat(
         const result = await querySnowflake(compiled.sql, compiled.bindings);
         finalRowCount = result.rowCount;
         finalQueryId = result.queryId;
-        envelope = buildAnswer({
-          plan,
-          metric,
-          rows: result.rows,
-          freshness,
-          provider: plan.provider,
-          fallbackUsed: providerFallbackUsed,
-        });
+        if (result.rows.length === 0 && !["M17", "M18", "M20", "M21", "M22"].includes(metricId)) {
+          const filterDesc = Object.entries(checked.filters)
+            .filter(([, v]) => v !== undefined && v !== null && v !== "")
+            .map(([k, v]) => `${k}=${String(v)}`)
+            .join(", ");
+          envelope = {
+            status: "DATA_UNAVAILABLE",
+            answer: `No data found in the warehouse for this. Filters used: ${filterDesc || "none"}.`,
+            mode: "deterministic",
+            intent: plan.intent,
+            interpretation: plan.interpretation,
+            metric_id: metricId,
+            metric_label: metric.label,
+            facts: {
+              values: {},
+              rows: [],
+              denominators: [metric.denominator],
+              caveats: [...metric.caveats, "No matching rows were returned by the published reporting view."],
+              source_scope: `PUBLISHED PROJECT_REPORTING · ${metric.primary_view}`,
+              as_of: freshness.latest_published_at ?? freshness.retrieved_on,
+              snapshot_date: freshness.latest_snapshot_date,
+              coverage_note: `Filters used: ${filterDesc || "none"}`,
+            },
+            citations: citationsFor(metric),
+            closest_match_disclosure: plan.closest_match_disclosure,
+            provider: plan.provider,
+            fallback_used: providerFallbackUsed,
+            freshness,
+          };
+        } else {
+          envelope = buildAnswer({
+            plan,
+            metric,
+            rows: result.rows,
+            freshness,
+            provider: plan.provider,
+            fallbackUsed: providerFallbackUsed,
+          });
+        }
       } catch (error) {
         logError("metric_query_failed", error, {
           request_id: requestIdValue,

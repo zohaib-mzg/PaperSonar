@@ -108,17 +108,17 @@ function matchedYears(text: string): number[] {
 const METRIC_RULES: Array<[string, RegExp]> = [
   [
     "M17",
-    /^(please\s+)?(find|search|look\s+up)\b|\b(find|search|look\s+up)\b.{0,60}\b(papers?|outputs?|works?|titles?|datasets?|research)\b/i,
-  ],
-  [
-    "M18",
-    /\b(latest|most recent|fresh|status|failed|published)\b.{0,30}\b(batch|data|ingest|pipeline)\b|\bwhich batch\b|\bsources are currently included\b|\bnot reportable\b|\bmissing from an answer\b/i,
+    /^(please\s+)?(find|search|look\s+up)\b|\b(find|search|look\s+up)\b.{0,60}\b(papers?|outputs?|works?|titles?|datasets?|research)\b|\b(latest|recent|new)\b.{0,20}\b(papers?|outputs?|works?|articles?)\b.{0,10}\b(on|about|for|related to)\b/i,
   ],
   ["M22", /\b(how fresh|freshness|latest snapshot|last updated|up to date)\b/i],
+  [
+    "M18",
+    /\b(latest|most recent|fresh|status|failed|published)\b.{0,30}\b(batch|data|ingest|pipeline)\b|\bwhich batch\b|\bsources are currently included\b|\bnot reportable\b|\bmissing from an answer\b|\bdata status\b/i,
+  ],
   ["M19", /\b(corpus size|total outputs|overall totals|how many outputs (in|across) (the )?corpus)\b/i],
   ["M20", /\b(define|definition|meaning of|what does .{1,40} mean)\b|\bwhat is [a-z0-9/-]{2,40}\?$/i],
-  ["M23", /\b(most cited|top cited|highest cited)\b.{0,40}\b(papers?|outputs?|works?|research)\b/i],
-  ["M05", /\b(citation gain|gained citations|citation growth|citation change|citations gained|citation trend)\b/i],
+  ["M23", /\b(most cited|top cited|highest cited)\b.{0,40}\b(papers?|outputs?|works?|research)\b|\btop\s+\d+\b.{0,60}\b(papers?|outputs?|works?|research)\b.{0,30}\b(citations?|cited)\b/i],
+  ["M05", /\b(citation gain|gained citations|citation growth|citation change|citations gained)\b/i],
   [
     "M16",
     /\b(cross[- ]source|duplicate|overlap between sources|same output in multiple sources|appear in only one source)\b/i,
@@ -134,7 +134,7 @@ const METRIC_RULES: Array<[string, RegExp]> = [
   ["M10", /\b(concentrated|concentration|top institutions share|share held by institutions)\b/i],
   ["M09", /\b(institution|institutions|university|universities|affiliation|affiliations|country|countries)\b/i],
   ["M11", /\b(author|authors|researcher|researchers|who publishes)\b/i],
-  ["M12", /\b(venue|venues|journal|journals|conference|conferences)\b/i],
+  ["M12", /\b(venue|venues|journal|journals|conference|conferences|where\b.{0,50}\bpublished most)\b/i],
   ["M14", /\b(open access|oa\b|access status|gold oa|green oa)\b/i],
   ["M08", /\b(missing metadata|completeness|without doi|without a? venue|without access status|missing author)\b/i],
   ["M07", /\b(coverage|coverage ratio|by source|per source|source coverage|underrepresented)\b/i],
@@ -142,22 +142,25 @@ const METRIC_RULES: Array<[string, RegExp]> = [
   ["M24", /\b(source contribution|which source contributes|contribution by source)\b/i],
   ["M02", /\b(share|percent|percentage|proportion|what fraction|of the corpus)\b/i],
   [
-    "M01",
-    /\b(grew|growth|declined|decline|increased|decreased|fastest|rising|falling|change in|relative increase|emerging)\b/i,
+    "M15",
+    /\b(by year|per year|publication years|publication[- ]year|year distribution|each year|partial[- ]year|year effect|under-?represented years?|years are under-represented|sparse years?|(?<!trending topics? )timeline|over time|annual trend|yearly trend|publication trend|trend over|trend of|trend in|trends? by|publication trend)\b/i,
   ],
   [
-    "M15",
-    /\b(by year|per year|publication years|publication[- ]year|year distribution|each year|partial[- ]year|year effect|under-?represented years?|years are under-represented|sparse years?)\b/i,
+    "M01",
+    /\b(grew|growth|declined|decline|increased|decreased|fastest|rising|falling|change in|relative increase|emerging|trending topics?|fastest growing)\b/i,
   ],
   [
     "M03",
-    /\b(how many|count|number of|volume|published|works?|papers?|outputs?|classified vs unclassified)\b/i,
+    /\b(how many|count|number of|volume|published|works?|papers?|outputs?|classified vs unclassified|what'?s new|new in|recent papers?|recent publications?)\b/i,
   ],
 ];
 
 function detectMetric(text: string): string | null {
   for (const [metricId, pattern] of METRIC_RULES) {
-    if (pattern.test(text)) return metricId;
+    if (pattern.test(text)) {
+      if (metricId === "M15" && /\btrending topics?\b/i.test(text)) return "M01";
+      return metricId;
+    }
   }
   return null;
 }
@@ -184,6 +187,7 @@ function extractSearchTerm(message: string): string | null {
   if (quoted) return quoted[1];
   let term = message
     .replace(/^(please\s+)?(find|search\s+for|look\s+up|show\s+me)\s+/i, "")
+    .replace(/^(latest|recent|new)\s+(papers?|outputs?|works?|articles?|research)\s+(on|about|for|related to)\s+/i, "")
     .replace(/^(papers?|outputs?|works?|titles?|datasets?|research)\s+(about|on|containing|with)?\s*/i, "")
     .replace(/^(title\s+search|search)\s*:?\s*/i, "")
     .replace(/[?.!]+$/g, "")
@@ -201,11 +205,31 @@ function applyYears(
 ): void {
   const years = matchedYears(text);
   const latest = latestCompleteYear();
-  if (/\b(last|past)\s+(five|5)\s+years?\b/i.test(text)) {
-    filters.year_from = latest - 4;
+  const lastN = text.match(/\b(?:last|past)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+years?\b/i);
+  if (lastN) {
+    const wordMap: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
+    const n = wordMap[lastN[1].toLowerCase()] ?? Number(lastN[1]);
+    if (Number.isFinite(n) && n > 0 && n <= 20) {
+      filters.year_from = latest - (n - 1);
+      filters.year_to = latest;
+      disclosures.push(`Using the latest ${n} complete publication year${n === 1 ? "" : "s"} (${filters.year_from}–${latest}).`);
+      return;
+    }
+  }
+  if (/\b(this year|current year)\b/i.test(text) && years.length === 0) {
+    filters.year_from = latest;
     filters.year_to = latest;
-    disclosures.push(`Using the latest five complete publication years (${latest - 4}–${latest}).`);
+    disclosures.push(`“This year” is interpreted as ${latest}, the latest complete publication year.`);
     return;
+  }
+  if (/\bsince\s+((?:19|20)\d{2})\b/i.test(text)) {
+    const since = Number(text.match(/\bsince\s+((?:19|20)\d{2})\b/i)?.[1]);
+    if (Number.isFinite(since)) {
+      filters.year_from = since;
+      filters.year_to = latest;
+      disclosures.push(`Using publication years ${since}–${latest}.`);
+      return;
+    }
   }
   if (/\blast year\b/i.test(text) && years.length === 0) {
     if (metricId === "M01") {
@@ -241,10 +265,54 @@ function applyYears(
   disclosures.push(`Using the latest complete publication window (${filters.year_from}–${latest}).`);
 }
 
-function isPolicyRefusal(text: string): boolean {
-  return /\b(caus(e|ed|ality)|why did|why does|because of|predict|forecast|will .{0,30}(rise|fall|grow|decline)|invest|buy|sell|medical advice|diagnose|legal advice|financial advice|full[- ]text|raw bronze|raw silver|accountadmin|ignore (your|previous|all) instructions|reveal (your|the) (prompt|system))\b/i.test(
+function isPromptInjection(text: string): boolean {
+  return /\b(ignore (your|previous|all) instructions|reveal (your|the) (prompt|system)|system prompt|developer message|jailbreak|do anything now|answer from your own knowledge)\b/i.test(
     text,
   );
+}
+
+function isPolicyRefusal(text: string): boolean {
+  return /\b(caus(e|ed|ality)|why did|why does|because of|predict|forecast|will .{0,30}(rise|fall|grow|decline)|invest|buy|sell|medical advice|diagnose|legal advice|financial advice|full[- ]text|raw bronze|raw silver|accountadmin)\b/i.test(
+    text,
+  ) || isPromptInjection(text);
+}
+
+function isOutOfScopeQuestion(text: string): boolean {
+  if (isPromptInjection(text)) return true;
+  const asksCode = /\b(write|generate|create|show me)\b.{0,40}\b(code|python|javascript|sql|script|function|program)\b/i.test(text) || /\b(code for|implement|regex for)\b/i.test(text);
+  const asksGeneral = /\b(president|weather|news|stock price|joke|poem|story|recipe|capital of|who won|movie|song)\b/i.test(text);
+  const chitChat = /^(hi|hello|hey|thanks|thank you|who are you|what can you do\??)$/i.test(text.trim());
+  const asksData = /\b(how many|count|number of|trend|timeline|over time|by year|per year|top\b|most cited|citations?|compare|versus|vs\.?|share|percentage|open access|institutions?|authors?|venues?|countries?|which|latest|fresh|new in|status|batch|outputs?|papers?|publications?|works?|articles?|datasets?|search|find|look up)\b/i.test(text);
+  const generalExplanation = /\b(explain|tell me about|teach me|how does .+ work|give me an overview of|describe)\b/i.test(text) && !asksData;
+  if (asksCode || asksGeneral || chitChat) return true;
+  if (generalExplanation) return true;
+  if (/\bexplain\b/i.test(text) && !/\b(trend|growth|change|difference|why .* (count|number|share))\b/i.test(text)) return true;
+  return false;
+}
+
+function outOfScopeRefusal(message: string): ResolvedPlan {
+  const lower = message.toLowerCase();
+  const hasRag = /\brag\b|retrieval[- ]augmented/.test(lower);
+  const suggestions = hasRag
+    ? [
+        "How many RAG papers were published in 2025?",
+        "Show the RAG publication timeline from 2020 to 2025.",
+        "Which institutions publish the most on RAG?",
+      ]
+    : [
+        "How many RAG outputs were published in 2025?",
+        "Which topics grew fastest in the latest complete year?",
+        "Compare OpenAlex and Crossref coverage.",
+      ];
+  return {
+    intent: "refuse",
+    metric_ids: [],
+    filters: {},
+    interpretation: "Out-of-scope question.",
+    confidence: 1,
+    refusal_reason: `I only answer questions about the published research data in this warehouse. Try: ${suggestions.map((s) => `“${s}”`).join(" ")}`,
+    plan_source: "deterministic",
+  };
 }
 
 function interpretationFor(metricId: string, filters: Filters, intent: string): string {
@@ -262,15 +330,19 @@ function interpretationFor(metricId: string, filters: Filters, intent: string): 
   return `${metricId} · ${label} · ${years}`;
 }
 
-function clarify(): ResolvedPlan {
+function clarify(message = ""): ResolvedPlan {
+  const lower = message.toLowerCase();
+  const hasCategory = matchCategories(lower).length > 0;
+  const suggestions = hasCategory
+    ? ["How many outputs were published in the latest year?", "Show the publication timeline by year.", "Which institutions publish the most?"]
+    : ["How many RAG outputs were published in 2025?", "Which topics grew fastest in the latest complete year?", "Compare OpenAlex and Crossref coverage."];
   return {
     intent: "clarify",
     metric_ids: [],
     filters: {},
-    interpretation: "I need a little more detail.",
+    interpretation: "Clarification needed.",
     confidence: 0.4,
-    clarification:
-      "I can answer defined questions about topics, citations, sources, institutions, authors, venues, access and freshness. Try: “How many RAG outputs were published in 2025?”",
+    clarification: `Which research-data question do you want answered? Options: ${suggestions.map((s) => `“${s}”`).join(" ")}`,
     plan_source: "deterministic",
   };
 }
@@ -293,6 +365,7 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
   const text = clean.toLowerCase();
   const disclosures: string[] = [];
 
+  if (isOutOfScopeQuestion(text)) return outOfScopeRefusal(clean);
   if (isPolicyRefusal(text)) return refuse();
 
   const matches = matchCategories(text);
@@ -300,10 +373,16 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
   const firstCategory = matches[0];
   const secondCategory = matches[1];
 
-  const followUp = /^(what about|how about|same for|and for|and what about)\b/i.test(text);
+  const followUp = /^(what about|how about|same for|and for|and what about|now\b|instead\b|also\b|break(?:ing)? down|split by|show it|by country|by institution|by author|by venue)\b/i.test(text);
   if (followUp && recent.length > 0) {
     const previous = recent[0];
     const filters: Filters = { ...previous.filters };
+    let followMetricId = previous.metric_id;
+    if (/\b(by country|countries|geography)\b/i.test(text)) followMetricId = "M09";
+    if (/\b(by institution|institutions|universit)\b/i.test(text)) followMetricId = "M09";
+    if (/\b(by author|authors|researchers)\b/i.test(text)) followMetricId = "M11";
+    if (/\b(by venue|venues|journals?|conferences?)\b/i.test(text)) followMetricId = "M12";
+    if (/\b(by year|per year|timeline|over time)\b/i.test(text)) followMetricId = "M15";
     if (firstCategory) filters.category_key = firstCategory.key;
     if (secondCategory) filters.category_key_b = secondCategory.key;
     if (sources[0]) filters.source_name = sources[0].name;
@@ -313,12 +392,12 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
       filters.year_to = years[years.length - 1];
     } else if (years.length === 1) {
       const year = years[0];
-      filters.year_from = previous.metric_id === "M01" ? year - 1 : year;
+      filters.year_from = followMetricId === "M01" ? year - 1 : year;
       filters.year_to = year;
-      if (previous.metric_id === "M01") {
+      if (followMetricId === "M01") {
         disclosures.push(`Growth for ${year} compares ${year - 1} with ${year}.`);
       }
-    } else if (previous.metric_id === "M01") {
+    } else if (followMetricId === "M01") {
       const from = Number(filters.year_from);
       const to = Number(filters.year_to);
       if (Number.isInteger(from) && Number.isInteger(to) && from === to) {
@@ -328,12 +407,14 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
     }
     const disclosure = disclosureFor(firstCategory);
     if (disclosure) disclosures.push(disclosure);
+    const topN = text.match(/\btop\s+(\d{1,2})\b/i);
+    if (topN) filters.limit = Math.min(50, Math.max(1, Number(topN[1])));
     return {
       intent: "metric",
-      metric_ids: [previous.metric_id],
+      metric_ids: [followMetricId],
       filters,
       interpretation: `Following up: ${previous.interpretation}`,
-      confidence: firstCategory ? 0.92 : 0.7,
+      confidence: firstCategory || followMetricId !== previous.metric_id ? 0.9 : 0.7,
       closest_match_disclosure: disclosures.join(" ") || undefined,
       follow_up: true,
       plan_source: "deterministic",
@@ -341,9 +422,9 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
   }
 
   const wantsCompare =
-    /\b(compare|comparison|versus|vs\.?|difference between|side by side)\b/i.test(text) ||
-    (sources.length >= 2 && /\b(and|versus|vs\.?)\b/i.test(text)) ||
-    (matches.length >= 2 && /\b(and|versus|vs\.?)\b/i.test(text));
+    /\b(compare|comparison|versus|vs\.?|difference between|side by side|more than|fewer than|higher than|lower than)\b/i.test(text) ||
+    (sources.length >= 2 && /\b(and|or|versus|vs\.?|more|fewer|higher|lower)\b/i.test(text)) ||
+    (matches.length >= 2 && /\b(and|or|versus|vs\.?|more|fewer|higher|lower)\b/i.test(text));
 
   let impliedMetricId: string | null = null;
 
@@ -382,6 +463,16 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
     }
 
     if (sides) {
+      if (firstCategory && dimension !== "category") {
+        sides[0].filters.category_key = firstCategory.key;
+        sides[1].filters.category_key = firstCategory.key;
+        const disclosure = disclosureFor(firstCategory);
+        if (disclosure) disclosures.push(disclosure);
+      }
+      if (sources[0] && dimension !== "source") {
+        sides[0].filters.source_name = sources[0].name;
+        sides[1].filters.source_name = sources[0].name;
+      }
       for (const side of sides) {
         if (dimension === "category") {
           const category = matches.find((match) => labelFor(match.key) === side.label);
@@ -395,7 +486,6 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
         sides[1].filters.year_from = sides[0].filters.year_from;
         sides[1].filters.year_to = sides[0].filters.year_to;
       }
-      if (sources[0] && dimension === "category") sides[0].filters.source_name = sources[0].name;
 
       return {
         intent: "compare",
@@ -428,13 +518,15 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
   if (quote) filters.venue_name = quote;
 
   applyYears(text, filters, metricId, disclosures);
+  const topN = text.match(/\btop\s+(\d{1,2})\b/i);
+  if (topN) filters.limit = Math.min(50, Math.max(1, Number(topN[1])));
 
   if (metricId === "M17") {
     const term = extractSearchTerm(clean);
     if (!term) {
       return {
         ...clarify(),
-        clarification: "Please tell me which title words to search for.",
+        clarification: "Which title should I search for? Options: “attention is all you need”, “retrieval augmented generation”, or “BERT”.",
       };
     }
     filters.search_term = term;
@@ -448,9 +540,7 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
     } else if (firstCategory) {
       return {
         ...clarify(),
-        clarification: `Which second category should I intersect with ${labelFor(
-          firstCategory.key,
-        )}?`,
+        clarification: `Which second category should I intersect with ${labelFor(firstCategory.key)}? Options: “LLM”, “AI/ML”, or “software testing”.`,
       };
     }
   }
@@ -458,7 +548,7 @@ export function resolveQuestion(message: string, recent: RecentTurn[] = []): Res
   if (CATEGORY_REQUIRED.has(metricId) && !filters.category_key) {
     return {
       ...clarify(),
-      clarification: `Which category should I use for this question? For example: RAG, AI/ML, physics or economics.`,
+      clarification: "Which category should I use? Options: “RAG”, “LLM”, or “AI/ML”.",
     };
   }
 

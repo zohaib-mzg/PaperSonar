@@ -89,7 +89,24 @@ function queryTokens(message: string): string[] {
 
 function selectRelevantMetrics(message: string) {
   const tokens = queryTokens(message);
-  if (tokens.length === 0) return metrics;
+  const lower = message.toLowerCase();
+  const boosts: Record<string, number> = {};
+  const add = (id: string, n: number) => { boosts[id] = (boosts[id] ?? 0) + n; };
+  if (/\b(timeline|trend|over time|by year|per year|each year|yearly|annual)\b/.test(lower)) { add("M15", 6); add("M04", 4); add("M01", 3); }
+  if (/\b(trending|emerging|fastest growing|grew fastest|growth)\b/.test(lower)) { add("M01", 8); add("M15", 3); }
+  if (/\b(top|most cited|ranking|ranked)\b/.test(lower)) { add("M23", 6); add("M09", 3); add("M11", 3); add("M12", 3); }
+  if (/\b(open access|oa\b|access)\b/.test(lower)) add("M14", 8);
+  if (/\b(citation|citations|cited)\b/.test(lower)) { add("M04", 5); add("M23", 4); add("M05", 3); }
+  if (/\b(author|authors|researcher)\b/.test(lower)) add("M11", 8);
+  if (/\b(institution|university|country|countries|geography)\b/.test(lower)) add("M09", 8);
+  if (/\b(venue|journal|conference)\b/.test(lower)) add("M12", 8);
+  if (/\b(compare|versus|vs\.?|difference)\b/.test(lower)) add("M03", 3);
+  if (/\b(fresh|latest|new|status|recent|updated)\b/.test(lower)) { add("M22", 5); add("M18", 4); add("M03", 2); }
+  if (/\b(find|search|look up|titled)\b/.test(lower)) add("M17", 8);
+  if (/\b(share|percentage|percent|proportion)\b/.test(lower)) { add("M02", 5); add("M14", 4); }
+  if (/\b(how many|count|number of|volume)\b/.test(lower)) add("M03", 5);
+
+  if (tokens.length === 0 && Object.keys(boosts).length === 0) return metrics;
 
   const scored = metrics
     .map((metric) => {
@@ -97,7 +114,7 @@ function selectRelevantMetrics(message: string) {
       const label = metric.label.toLowerCase();
       const description = metric.description.toLowerCase();
       const dimensions = metric.dimensions.join(" ").toLowerCase();
-      let score = 0;
+      let score = boosts[metric.id] ?? 0;
       for (const token of tokens) {
         if (id.includes(token)) score += 5;
         if (label.includes(token)) score += 3;

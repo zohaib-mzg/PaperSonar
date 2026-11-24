@@ -5,12 +5,14 @@ import type { ResolvedPlan } from "@/server/metrics/resolver";
 import type { SnowflakeRow } from "@/server/snowflake/types";
 
 export type ChartSpec = {
-  kind: "bar" | "line";
+  kind: "bar" | "line" | "horizontal_bar" | "donut" | "multi_line" | "grouped_bar" | "metric";
   title: string;
   labels: string[];
   series: Array<{ label: string; values: Array<number | null> }>;
   unit?: string;
   note?: string;
+  xLabel?: string;
+  yLabel?: string;
   fallback: { headers: string[]; rows: string[][] };
 };
 
@@ -116,29 +118,83 @@ function ratioToPercent(value: number | null): number | null {
   return Math.round(scaled * 10) / 10;
 }
 
-function chartFromSeries(
-  title: string,
+type ChartOptions = {
+  preferred?: ChartSpec["kind"];
+  xLabel?: string;
+  yLabel?: string;
+  asOfYear?: number | null;
+};
+
+function trimTrailingEmptyYears(
   labels: string[],
   series: Array<{ label: string; values: Array<number | null> }>,
+  asOfYear?: number | null,
+): { labels: string[]; series: Array<{ label: string; values: Array<number | null> }> } {
+  const yearIdxs = labels.map((l, i) => ({ l, i, y: Number(l.match(/^(19|20)\d{2}$/)?.[0]) }));
+  const isYearSeries = yearIdxs.every((x) => Number.isFinite(x.y));
+  if (!isYearSeries) return { labels, series };
+  let end = labels.length - 1;
+  while (end >= 0) {
+    const y = yearIdxs[end].y;
+    if (asOfYear != null && y > asOfYear) { end -= 1; continue; }
+    const allEmpty = series.every((s) => s.values[end] == null || s.values[end] === 0);
+    if (allEmpty) { end -= 1; continue; }
+    break;
+  }
+  if (end === labels.length - 1) return { labels, series };
+  if (end < 0) return { labels: [], series: series.map((s) => ({ ...s, values: [] })) };
+  return { labels: labels.slice(0, end + 1), series: series.map((s) => ({ ...s, values: s.values.slice(0, end + 1) })) };
+}
+
+function pickKind(labels: string[], series: Array<{ label: string; values: Array<number | null> }>, opts?: ChartOptions): ChartSpec["kind"] {
+  if (opts?.preferred) return opts.preferred;
+  const isYears = labels.length > 1 && labels.every((l) => /^(19|20)\d{2}$/.test(l));
+  if (series.length > 1) return isYears ? "multi_line" : "grouped_bar";
+  if (isYears) return "line";
+  return labels.length > 6 ? "horizontal_bar" : "bar";
+}
+
+function chartFromSeries(
+  title: string,
+  labelsIn: string[],
+  seriesIn: Array<{ label: string; values: Array<number | null> }>,
   unit?: string,
   note?: string,
+  opts?: ChartOptions,
 ): ChartSpec | undefined {
+  const trimmed = trimTrailingEmptyYears(labelsIn, seriesIn, opts?.asOfYear);
+  const labels = trimmed.labels;
+  const series = trimmed.series;
   if (labels.length === 0 || series.length === 0) return undefined;
+  if (labels.length <= 3 && (opts?.preferred === undefined || opts.preferred === "bar" || opts.preferred === "horizontal_bar")) return undefined;
   const flat = series.flatMap((item) => item.values).filter((value): value is number => value !== null);
   if (flat.length < 2 || new Set(flat).size < 2) return undefined;
-  const headers = ["Category", ...series.map((item) => item.label)];
+  const kind = pickKind(labels, series, opts);
+  const headers = ["Label", ...series.map((item) => item.label)];
   const fallbackRows = labels.map((label, index) => [
     label,
     ...series.map((item) => (item.values[index] === null ? "not reported" : fmt(item.values[index]))),
   ]);
+  return { kind, title, labels, series, unit, note, xLabel: opts?.xLabel, yLabel: opts?.yLabel ?? unit, fallback: { headers, rows: fallbackRows } };
+}
+
+function donutChart(title: string, labels: string[], values: number[], unit?: string, note?: string): ChartSpec | undefined {
+  const pairs = labels.map((l, i) => ({ l, v: values[i] ?? 0 })).filter((p) => p.v > 0);
+  if (pairs.length < 2) return undefined;
+  pairs.sort((a, b) => b.v - a.v);
+  const top = pairs.slice(0, 6);
+  const rest = pairs.slice(6).reduce((s, p) => s + p.v, 0);
+  if (rest > 0) top.push({ l: "Other", v: rest });
+  const finalLabels = top.map((p) => p.l);
+  const finalValues = top.map((p) => p.v);
   return {
-    kind: series.length > 1 ? "line" : "bar",
+    kind: "donut",
     title,
-    labels,
-    series,
-    unit,
+    labels: finalLabels,
+    series: [{ label: title, values: finalValues }],
+    unit: unit ?? "%",
     note,
-    fallback: { headers, rows: fallbackRows },
+    fallback: { headers: ["Category", "Value"], rows: finalLabels.map((l, i) => [l, fmt(finalValues[i])]) },
   };
 }
 
@@ -227,6 +283,70 @@ function growthAnswer(input: BuildInput): AnswerEnvelope {
     };
   }
 
+  const asOfYear = Number(String(freshness.latest_published_at ?? "").slice(0, 4)) || null;
+  const allYears = [...new Set(rows.map((r) => num(r, "PUBLICATION_YEAR")).filter((y): y is number => y !== null))].sort((a, b) => a - b);
+  const timelineYears = allYears.filter((y) => (asOfYear ? y <= asOfYear : true));
+  const isTimeline = timelineYears.length > 2;
+  const categoryYear = new Map<string, { label: string; byYear: Map<number, number> }>();
+  for (const row of rows) {
+    const key = str(row, "CATEGORY_KEY") ?? "unclassified";
+    const year = num(row, "PUBLICATION_YEAR");
+    const works = num(row, "WORKS");
+    if (year === null || works === null) continue;
+    const entry = categoryYear.get(key) ?? { label: str(row, "CATEGORY_LABEL") ?? labelForCategory(key), byYear: new Map<number, number>() };
+    entry.byYear.set(year, (entry.byYear.get(year) ?? 0) + works);
+    categoryYear.set(key, entry);
+  }
+  const topCats = [...categoryYear.entries()]
+    .map(([key, v]) => ({ key, ...v, total: [...v.byYear.values()].reduce((s, n) => s + n, 0) }))
+    .sort((a, b) => b.total - a.total)
+    .slice(0, 5);
+
+  let chart: ChartSpec | undefined;
+  if (isTimeline && topCats.length > 0) {
+    const labels = timelineYears.map(String);
+    const series = topCats.map((cat) => ({
+      label: cat.label,
+      values: timelineYears.map((y) => cat.byYear.get(y) ?? 0),
+    }));
+    const topByYear = timelineYears.map((y) => {
+      let best: { label: string; works: number } | null = null;
+      for (const cat of categoryYear.values()) {
+        const w = cat.byYear.get(y) ?? 0;
+        if (!best || w > best.works) best = { label: cat.label, works: w };
+      }
+      return { year: y, label: best?.label ?? "n/a", works: best?.works ?? 0 };
+    });
+    chart = chartFromSeries(
+      "Trending topics timeline",
+      labels,
+      series,
+      "works",
+      "Top 5 categories by published works in the selected window.",
+      { preferred: series.length > 1 ? "multi_line" : "line", xLabel: "Year", yLabel: "Works", asOfYear },
+    );
+    facts.rows = topByYear.map((r) => ({ year: r.year, top_category: r.label, works: r.works }));
+    facts.values = { start_year: timelineYears[0], end_year: timelineYears[timelineYears.length - 1], categories_shown: topCats.length };
+    const emerging = topByYear[topByYear.length - 1];
+    const answer = `The timeline shows the top ${topCats.length} categories by published works from ${timelineYears[0]} to ${timelineYears[timelineYears.length - 1]}. In ${emerging.year}, the leading category was ${emerging.label} (${fmt(emerging.works)} works). ${headerAnswer(metric, facts)}`;
+    return {
+      status: "answered",
+      answer,
+      mode: "deterministic",
+      intent: plan.intent,
+      interpretation: plan.interpretation,
+      metric_id: metric.id,
+      metric_label: metric.label,
+      facts,
+      chart,
+      citations: citationsFor(metric),
+      closest_match_disclosure: plan.closest_match_disclosure,
+      provider,
+      fallback_used: fallbackUsed,
+      freshness,
+    };
+  }
+
   const top = ranked.slice(0, 5);
   facts.values = {
     start_year: startYear,
@@ -241,15 +361,15 @@ function growthAnswer(input: BuildInput): AnswerEnvelope {
     change: entry.delta,
   }));
   facts.denominators.push("change = works in end year minus works in start year");
-  const chart = chartFromSeries(
+  chart = chartFromSeries(
     `Works change ${startYear}–${endYear}`,
     top.map((entry) => entry.label),
     [{ label: "Change in works", values: top.map((entry) => entry.delta) }],
     "works",
+    undefined,
+    { preferred: "bar", xLabel: "Category", yLabel: "Change in works", asOfYear },
   );
-  const answer = `Between ${startYear} and ${endYear}, the largest change among reportable categories was ${
-    top[0].label
-  } (${fmt(top[0].delta)} works). ${headerAnswer(metric, facts)}`;
+  const answer = `Between ${startYear} and ${endYear}, the largest change among reportable categories was ${top[0].label} (${fmt(top[0].delta)} works). ${headerAnswer(metric, facts)}`;
   return {
     status: "answered",
     answer,
@@ -279,25 +399,34 @@ function genericAnswer(input: BuildInput): AnswerEnvelope {
       metric.id === "M02" ? "SHARE_OF_CORPUS" : metric.id === "M15" ? "WORKS" : "CANONICAL_OUTPUTS";
     const grouped = new Map<string, number>();
     for (const row of rows) {
-      const key = metric.id === "M15" ? String(num(row, "PUBLICATION_YEAR") ?? "unknown") : labelForCategory(str(row, "CATEGORY_KEY"));
+      const key = metric.id === "M15" ? String(num(row, "PUBLICATION_YEAR") ?? "unknown") : (metric.id === "M24" ? (str(row, "PRIMARY_SOURCE_NAME") ?? str(row, "SOURCE_NAME") ?? "unknown") : labelForCategory(str(row, "CATEGORY_KEY")));
       const value = num(row, valueKey);
       if (value !== null) grouped.set(key, (grouped.get(key) ?? 0) + value);
     }
-    const top = [...grouped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
-    const values = top.map(([, value]) =>
-      metric.id === "M02" ? ratioToPercent(value) : value,
-    );
+    const entries = [...grouped.entries()];
+    const sorted = metric.id === "M15" ? entries.sort((a, b) => Number(a[0]) - Number(b[0])) : entries.sort((a, b) => b[1] - a[1]);
+    const top = sorted.slice(0, metric.id === "M15" ? 20 : 8);
+    const values = top.map(([, value]) => (metric.id === "M02" ? ratioToPercent(value) : value));
     facts.values = Object.fromEntries(top.map(([, value], index) => [`value_${index + 1}`, value]));
     facts.rows = top.map(([label, value]) => ({ label, value }));
-    chart = chartFromSeries(
-      metric.label,
-      top.map(([label]) => label),
-      [{ label: metric.label, values }],
-      metric.id === "M02" ? "%" : "works",
-    );
-    answer = `The largest reported ${metric.label.toLowerCase()} is ${top[0]?.[0] ?? "n/a"} (${
-      metric.id === "M02" ? pct(values[0]) : fmt(values[0])
-    }). ${headerAnswer(metric, facts)}`;
+    const asOfYear = Number(String(freshness.latest_published_at ?? "").slice(0, 4)) || null;
+    if (metric.id === "M02") {
+      chart = donutChart(metric.label, top.map(([l]) => l), top.map(([, v]) => ratioToPercent(v) ?? 0), "%");
+    } else {
+      chart = chartFromSeries(
+        metric.label,
+        top.map(([label]) => label),
+        [{ label: metric.label, values }],
+        "works",
+        undefined,
+        metric.id === "M15"
+          ? { preferred: "line", xLabel: "Year", yLabel: "Works", asOfYear }
+          : { preferred: top.length > 3 ? "horizontal_bar" : "bar", xLabel: "Works" },
+      );
+    }
+    const lead = metric.id === "M15" ? top[top.length - 1] : top[0];
+    const leadVal = metric.id === "M02" ? pct(values[top.indexOf(lead!)] ?? null) : fmt(lead?.[1] ?? null);
+    answer = `The largest reported ${metric.label.toLowerCase()} is ${lead?.[0] ?? "n/a"} (${leadVal}). ${headerAnswer(metric, facts)}`;
   } else if (metric.id === "M03" || metric.id === "M07" || metric.id === "M13") {
     const valueKey = metric.id === "M03" ? "WORKS" : metric.id === "M07" ? "OUTPUTS" : "OUTPUTS";
     const labelKey = metric.id === "M03" ? "CATEGORY_LABEL" : metric.id === "M07" ? "PRIMARY_SOURCE_NAME" : "OUTPUT_TYPE_NAME";
@@ -310,38 +439,59 @@ function genericAnswer(input: BuildInput): AnswerEnvelope {
     const top = [...grouped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
     facts.values = Object.fromEntries(top.map(([, value], index) => [`value_${index + 1}`, value]));
     facts.rows = top.map(([label, value]) => ({ label, value }));
-    chart = chartFromSeries(
-      metric.label,
-      top.map(([label]) => label),
-      [{ label: "Works", values: top.map(([, value]) => value) }],
-      "works",
-    );
+    if (metric.id === "M13") {
+      chart = top.length > 3 ? donutChart(metric.label, top.map(([l]) => l), top.map(([, v]) => v), "works") : undefined;
+    } else {
+      chart = top.length > 3 ? chartFromSeries(
+        metric.label,
+        top.map(([label]) => label),
+        [{ label: "Works", values: top.map(([, value]) => value) }],
+        "works",
+        undefined,
+        { preferred: top.length > 5 ? "horizontal_bar" : "bar", xLabel: "Works" },
+      ) : undefined;
+    }
     answer = `The reported ${metric.label.toLowerCase()} is ${fmt(top[0]?.[1] ?? null)} for ${
       top[0]?.[0] ?? "the selected scope"
     }. ${headerAnswer(metric, facts)}`;
   } else if (metric.id === "M04") {
-    const sorted = [...rows].sort((a, b) => (num(a, "PUBLICATION_YEAR") ?? 0) - (num(b, "PUBLICATION_YEAR") ?? 0));
-    const labels = sorted.map((row) => String(num(row, "PUBLICATION_YEAR") ?? str(row, "SNAPSHOT_DATE") ?? "unknown"));
+    const asOfYear = Number(String(freshness.latest_published_at ?? "").slice(0, 4)) || null;
+    const sorted = [...rows]
+      .filter((row) => num(row, "PUBLICATION_YEAR") !== null)
+      .sort((a, b) => (num(a, "PUBLICATION_YEAR") ?? 0) - (num(b, "PUBLICATION_YEAR") ?? 0))
+      .filter((row) => {
+        const y = num(row, "PUBLICATION_YEAR");
+        return y !== null && (asOfYear ? y <= asOfYear : true);
+      });
+    while (sorted.length > 0) {
+      const last = sorted[sorted.length - 1];
+      const observed = num(last, "OBSERVED_WORKS") ?? 0;
+      const avg = num(last, "AVG_CITED_BY") ?? 0;
+      if (observed === 0 && avg === 0) { sorted.pop(); continue; }
+      break;
+    }
+    const labels = sorted.map((row) => String(num(row, "PUBLICATION_YEAR")));
     const averages = sorted.map((row) => num(row, "AVG_CITED_BY"));
-    facts.values = valuesFromRows(rows, ["TOTAL_CITATIONS", "OBSERVED_WORKS", "COHORT_SIZE", "AVG_CITED_BY"]);
-    facts.rows = sorted.slice(0, 8).map((row) => ({
+    facts.values = valuesFromRows(sorted, ["TOTAL_CITATIONS", "OBSERVED_WORKS", "COHORT_SIZE", "AVG_CITED_BY"]);
+    facts.rows = sorted.slice(0, 12).map((row) => ({
       year: num(row, "PUBLICATION_YEAR"),
       observed: num(row, "OBSERVED_WORKS"),
       average_citations: num(row, "AVG_CITED_BY"),
       median_citations: num(row, "MEDIAN_CITED_BY"),
     }));
-    facts.snapshot_date = str(rows[0] ?? {}, "SNAPSHOT_DATE") ?? facts.snapshot_date;
-    chart = chartFromSeries("Average citations by year", labels, [{ label: "Average cited-by", values: averages }], "citations");
+    facts.snapshot_date = str(sorted[0] ?? rows[0] ?? {}, "SNAPSHOT_DATE") ?? facts.snapshot_date;
+    chart = chartFromSeries("Average citations by year", labels, [{ label: "Average cited-by", values: averages }], "citations", undefined, { preferred: "line", xLabel: "Year", yLabel: "Average citations", asOfYear });
     answer = `The reported citation snapshot covers ${fmt(facts.values.OBSERVED_WORKS as number)} observed works with ${fmt(
       facts.values.TOTAL_CITATIONS as number,
     )} total citations. ${headerAnswer(metric, facts)}`;
   } else if (metric.id === "M05" || metric.id === "M23") {
     const valueKey = metric.id === "M05" ? "CITATION_CHANGE" : "CITED_BY_COUNT";
-    const top = [...rows].sort((a, b) => (num(b, valueKey) ?? -Infinity) - (num(a, valueKey) ?? -Infinity)).slice(0, 8);
-    const labels = top.map((row) => String(num(row, "OUTPUT_SK") ?? str(row, "OUTPUT_SK") ?? "output"));
+    const limit = Math.min(10, Math.max(1, Number(plan.filters.limit ?? 10)));
+    const top = [...rows].sort((a, b) => (num(b, valueKey) ?? -Infinity) - (num(a, valueKey) ?? -Infinity)).slice(0, limit);
+    const labels = top.map((row) => String(str(row, "TITLE") ?? str(row, "OUTPUT_SK") ?? num(row, "OUTPUT_SK") ?? "output"));
     facts.values = Object.fromEntries(top.map((row, index) => [`output_${index + 1}`, num(row, valueKey) ?? 0]));
-    facts.rows = top.map((row) => ({ output: str(row, "OUTPUT_SK"), value: num(row, valueKey) }));
-    chart = chartFromSeries(metric.label, labels, [{ label: valueKey, values: top.map((row) => num(row, valueKey)) }], "citations");
+    facts.rows = top.map((row) => ({ output: str(row, "OUTPUT_SK") ?? num(row, "OUTPUT_SK"), title: str(row, "TITLE"), value: num(row, valueKey) }));
+    chart = top.length > 3 ? chartFromSeries(metric.label, labels, [{ label: metric.id === "M05" ? "Citation change" : "Citations", values: top.map((row) => num(row, valueKey)) }], "citations", undefined, { preferred: "horizontal_bar", yLabel: "Output", xLabel: "Citations" }) : undefined;
     answer = `The largest reported ${metric.label.toLowerCase()} is ${fmt(num(top[0] ?? {}, valueKey))}. ${headerAnswer(
       metric,
       facts,
@@ -399,22 +549,25 @@ function genericAnswer(input: BuildInput): AnswerEnvelope {
     )}`;
   } else if (metric.id === "M08" || metric.id === "M14") {
     const labelKey = metric.id === "M08" ? "PRIMARY_SOURCE_NAME" : "CATEGORY_LABEL";
-    const valueKey = metric.id === "M08" ? "OUTPUTS_WITHOUT_DOI" : "OPEN_ACCESS_SHARE_KNOWN";
-    const labels = rows.slice(0, 8).map((row) => str(row, labelKey) ?? "unknown");
-    const values = rows.slice(0, 8).map((row) =>
-      metric.id === "M08" ? num(row, valueKey) : ratioToPercent(num(row, valueKey)),
-    );
-    facts.values = valuesFromRows(rows, metric.id === "M08"
-      ? ["OUTPUTS", "OUTPUTS_WITHOUT_DOI", "OUTPUTS_WITHOUT_VENUE", "OUTPUTS_WITHOUT_ACCESS_STATUS"]
-      : ["WORKS", "KNOWN_ACCESS_WORKS", "UNKNOWN_ACCESS_WORKS", "OPEN_ACCESS_WORKS"]);
-    facts.rows = rows.slice(0, 8).map((row) => ({ label: str(row, labelKey), value: num(row, valueKey) }));
-    chart = chartFromSeries(
-      metric.label,
-      labels,
-      [{ label: metric.label, values }],
-      metric.id === "M08" ? "outputs" : "%",
-    );
-    answer = `${metric.label} is reported for ${labels.length} scope rows. ${headerAnswer(metric, facts)}`;
+    if (metric.id === "M14") {
+      const totalKnown = rows.reduce((s, r) => s + (num(r, "KNOWN_ACCESS_WORKS") ?? 0), 0);
+      const open = rows.reduce((s, r) => s + (num(r, "OPEN_ACCESS_WORKS") ?? 0), 0);
+      const unknown = rows.reduce((s, r) => s + (num(r, "UNKNOWN_ACCESS_WORKS") ?? 0), 0);
+      const closed = Math.max(0, totalKnown - open);
+      facts.values = { ...valuesFromRows(rows, ["WORKS", "KNOWN_ACCESS_WORKS", "UNKNOWN_ACCESS_WORKS", "OPEN_ACCESS_WORKS"]), open_access_works: open, closed_known_works: closed };
+      facts.rows = rows.slice(0, 8).map((row) => ({ label: str(row, labelKey), open_access_share_known: ratioToPercent(num(row, "OPEN_ACCESS_SHARE_KNOWN")) }));
+      const share = totalKnown > 0 ? Math.round((open / totalKnown) * 1000) / 10 : null;
+      chart = totalKnown > 0 ? donutChart("Open access share", ["Open access", "Closed (known)", ...(unknown > 0 ? ["Unknown access"] : [])], [open, closed, ...(unknown > 0 ? [unknown] : [])], "works", "Share based on published winner-source access fields.") : undefined;
+      answer = share === null ? `Open-access share is not reported for this scope. ${headerAnswer(metric, facts)}` : `Open access accounts for ${pct(share)} of known-access works in this scope. ${headerAnswer(metric, facts)}`;
+    } else {
+      const valueKey = "OUTPUTS_WITHOUT_DOI";
+      const labels = rows.slice(0, 8).map((row) => str(row, labelKey) ?? "unknown");
+      const values = rows.slice(0, 8).map((row) => num(row, valueKey));
+      facts.values = valuesFromRows(rows, ["OUTPUTS", "OUTPUTS_WITHOUT_DOI", "OUTPUTS_WITHOUT_VENUE", "OUTPUTS_WITHOUT_ACCESS_STATUS"]);
+      facts.rows = rows.slice(0, 8).map((row) => ({ label: str(row, labelKey), value: num(row, valueKey) }));
+      chart = labels.length > 3 ? chartFromSeries(metric.label, labels, [{ label: metric.label, values }], "outputs", undefined, { preferred: "horizontal_bar", xLabel: "Outputs" }) : undefined;
+      answer = `${metric.label} is reported for ${labels.length} scope rows. ${headerAnswer(metric, facts)}`;
+    }
   } else if (metric.id === "M09" || metric.id === "M10" || metric.id === "M11" || metric.id === "M12") {
     const labelKey =
       metric.id === "M09"
@@ -431,15 +584,18 @@ function genericAnswer(input: BuildInput): AnswerEnvelope {
       const value = num(row, valueKey);
       if (value !== null) grouped.set(label, (grouped.get(label) ?? 0) + value);
     }
-    const top = [...grouped.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const limit = Math.min(15, Math.max(1, Number(plan.filters.limit ?? 10)));
+    const top = [...grouped.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit);
     facts.values = Object.fromEntries(top.map(([, value], index) => [`value_${index + 1}`, value]));
     facts.rows = top.map(([label, value]) => ({ label, value }));
-    chart = chartFromSeries(
+    chart = top.length > 3 ? chartFromSeries(
       metric.label,
       top.map(([label]) => label),
-      [{ label: valueKey, values: top.map(([, value]) => value) }],
+      [{ label: metric.id === "M09" || metric.id === "M10" ? "Fractional credit" : "Works", values: top.map(([, value]) => value) }],
       metric.id === "M09" || metric.id === "M10" ? "fractional credit" : "works",
-    );
+      undefined,
+      { preferred: "horizontal_bar", xLabel: metric.id === "M09" || metric.id === "M10" ? "Fractional credit" : "Works", yLabel: labelKey.toLowerCase().replace("_name", "").replace("_", " ") },
+    ) : undefined;
     answer = `The leading reported ${labelKey.toLowerCase().replace("_name", "")} is ${top[0]?.[0] ?? "n/a"} with ${fmt(
       top[0]?.[1] ?? null,
     )}. ${headerAnswer(metric, facts)}`;
@@ -512,6 +668,21 @@ function genericAnswer(input: BuildInput): AnswerEnvelope {
     answer = `${metric.description} ${headerAnswer(metric, facts)}`;
   }
 
+  if (chart && chart.kind !== "metric" && chart.kind !== "donut" && facts.rows.length > 0 && facts.rows.length <= 3 && metric.id !== "M04" && metric.id !== "M15") {
+    chart = undefined;
+  }
+  const numericValues = Object.values(facts.values).filter((v): v is number => typeof v === "number" && Number.isFinite(v));
+  if (!chart && numericValues.length === 1 && (metric.id === "M19" || metric.id === "M22") && facts.rows.length === 0) {
+    chart = {
+      kind: "metric",
+      title: metric.label,
+      labels: [metric.label],
+      series: [{ label: metric.label, values: [numericValues[0]] }],
+      unit: metric.id === "M19" ? "outputs" : undefined,
+      fallback: { headers: ["Metric", "Value"], rows: [[metric.label, fmt(numericValues[0])]] },
+    };
+  }
+
   return {
     status: "answered",
     answer,
@@ -567,11 +738,14 @@ export function buildComparisonAnswer(
   facts.values = Object.fromEntries(sums.map((item, index) => [`side_${index + 1}`, item.value]));
   facts.rows = sums.map((item, index) => ({ label: item.label, value: display[index] }));
   facts.denominators.push(`each side uses ${metric.denominator.toLowerCase()}`);
+  const preferred: ChartSpec["kind"] = plan.comparison?.dimension === "year" ? "grouped_bar" : "grouped_bar";
   const chart = chartFromSeries(
     `${metric.label} comparison`,
     sums.map((item) => item.label),
     [{ label: metric.label, values: display }],
     metric.id === "M02" || metric.id === "M14" ? "%" : undefined,
+    undefined,
+    { preferred, xLabel: "Comparison", yLabel: metric.label },
   );
   const answer = `Comparison: ${sums[0]?.label ?? "left side"} ${fmt(display[0])} versus ${
     sums[1]?.label ?? "right side"

@@ -1,10 +1,12 @@
 export type ChartSpec = {
-  kind: "bar" | "line";
+  kind: "bar" | "line" | "horizontal_bar" | "donut" | "multi_line" | "grouped_bar" | "metric";
   title: string;
   labels: string[];
   series: Array<{ label: string; values: Array<number | null> }>;
   unit?: string;
   note?: string;
+  xLabel?: string;
+  yLabel?: string;
   fallback: { headers: string[]; rows: string[][] };
 };
 

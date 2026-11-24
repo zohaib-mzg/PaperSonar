@@ -71,7 +71,7 @@ describe("chat orchestration", () => {
     expect(result.body.freshness.latest_snapshot_date).toBe("2026-11-01");
   });
 
-  it("clarifies unsupported questions without querying a metric", async () => {
+  it("refuses out-of-scope questions without querying a metric", async () => {
     queryMock.mockImplementation(async (sql: string) => ({
       rows: sql.includes("VW_PUBLIC_CORPUS_SUMMARY") ? summaryRows : [],
       queryId: null,
@@ -84,7 +84,7 @@ describe("chat orchestration", () => {
       "req-test-2",
     );
     expect(result.status).toBe(200);
-    expect(result.body.status).toBe("clarify");
+    expect(result.body.status).toBe("refused");
     expect(result.body.metric_id).toBeNull();
   });
 
